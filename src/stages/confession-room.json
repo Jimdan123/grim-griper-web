@@ -3,7 +3,7 @@
   "displayName": "The Confession Room",
   "meta": { "tile": 16, "width": 80, "height": 45 },
   "chapelBounds": { "x": 80, "y": 200, "width": 1120, "height": 420 },
-  "playerBounds": { "x": 0, "y": 200, "width": 1248, "height": 420 },
+  "playerBounds": { "x": 80, "y": 200, "width": 1120, "height": 420 },
   "reaperSpawn": { "spawnX": 240, "doorInteractMinX": 900, "doorInteractMaxX": 996, "entryTargetX": 200, "entryWalkDurationMs": 1000 },
   "fearBucketThreshold": 50,
   "rooms": [

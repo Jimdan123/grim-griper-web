@@ -42,6 +42,12 @@ const BUBBLE_LIFETIME_MS = FADE_IN_MS + HOLD_MS + FADE_OUT_MS;
 const SPAWN_MIN_MS = 4000;
 const SPAWN_MAX_MS = 8000;
 
+// Bubble layout. Padding is the cream-fill inset from outline on all sides.
+// MAX_TEXT_WIDTH is the wordWrap cap — long lines wrap to multi-line bubbles
+// which then size vertically to fit.
+const BUBBLE_PADDING = 6;
+const MAX_TEXT_WIDTH = 220;
+
 // Curated chatter lines — 10 anonymous-pilgrim petitions / news / gratitude
 // fragments. Medieval-pilgrim register, restrained. Some quiet petitions,
 // some mundane news, some gratitude. The horror is that these people TRUST
@@ -67,13 +73,12 @@ class ChatterBubble {
     this.view = new Container();
     this.view.label = 'chatter-bubble';
 
-    // Bubble background (1px outline + cream fill). Sized once, drawn once;
-    // we don't resize per-line — Text inherits a max-width layout via
-    // wordWrap, and the bubble background is sized to fit the widest line.
-    this._bubbleW = 168;
-    this._bubbleH = 24;
+    // Bubble background (1px outline + cream fill). Re-drawn each spawn to
+    // fit the actual rendered text (lines vary 8–47 chars; a fixed size
+    // either left short lines underfilled or clipped long lines).
+    this._bubbleW = 0;
+    this._bubbleH = 0;
     this._bg = new Graphics();
-    this._drawBubble();
     this.view.addChild(this._bg);
 
     // Text inside. Pixel-art register monospace, 10px font.
@@ -85,11 +90,11 @@ class ChatterBubble {
         fill: PIXEL_PALETTE.BUBBLE_TEXT,
         align: 'left',
         wordWrap: true,
-        wordWrapWidth: this._bubbleW - 12,
+        wordWrapWidth: MAX_TEXT_WIDTH,
       },
     });
-    this._text.x = 6;
-    this._text.y = 6;
+    this._text.x = BUBBLE_PADDING;
+    this._text.y = BUBBLE_PADDING;
     this.view.addChild(this._text);
 
     this.view.visible = false;
@@ -112,11 +117,12 @@ class ChatterBubble {
     g.rect(0, 0, W, H).fill(PIXEL_PALETTE.BUBBLE_OUTLINE);
     // Cream fill inset 1px.
     g.rect(1, 1, W - 2, H - 2).fill(PIXEL_PALETTE.BUBBLE_FILL);
-    // Bubble tail (downward triangle): 4×3 px notch at bottom-left quarter,
-    // drawn as three stepped 1px rects pointing down.
-    g.rect(16, H, 4, 1).fill(PIXEL_PALETTE.BUBBLE_OUTLINE);
-    g.rect(17, H + 1, 2, 1).fill(PIXEL_PALETTE.BUBBLE_OUTLINE);
-    g.rect(17, H, 2, 1).fill(PIXEL_PALETTE.BUBBLE_FILL);
+    // Bubble tail (downward notch) centered horizontally — points at the
+    // NPC's head since the bubble is centered on the NPC's anchorX.
+    const tailX = Math.floor(W / 2) - 2;
+    g.rect(tailX, H, 4, 1).fill(PIXEL_PALETTE.BUBBLE_OUTLINE);
+    g.rect(tailX + 1, H + 1, 2, 1).fill(PIXEL_PALETTE.BUBBLE_OUTLINE);
+    g.rect(tailX + 1, H, 2, 1).fill(PIXEL_PALETTE.BUBBLE_FILL);
   }
 
   /**
@@ -129,6 +135,12 @@ class ChatterBubble {
     this._npc = npc;
     this._world = world;
     this._text.text = text;
+    // Size the bubble to the laid-out text (Pixi Text exposes width/height
+    // synchronously after the .text setter runs the wordWrap layout). Round
+    // up to keep crisp 1px pixel-art edges.
+    this._bubbleW = Math.ceil(this._text.width) + BUBBLE_PADDING * 2;
+    this._bubbleH = Math.ceil(this._text.height) + BUBBLE_PADDING * 2;
+    this._drawBubble();
     this._elapsedMs = 0;
     this.active = true;
     this.view.visible = true;

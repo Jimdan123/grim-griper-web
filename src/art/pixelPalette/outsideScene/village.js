@@ -32,16 +32,20 @@ export function drawVillage(container, spec) {
   // grass (the existing path band) → foreground (cobble path + props).
   const hills = new Graphics();
   // Back hill ridge — far horizon, slightly bluer (atmospheric perspective).
-  // A series of overlapping arcs at y ≈ 320-360 with FOLIAGE_DARK + a touch
-  // of sky-blue mixed in via low-alpha overlay.
-  const BACK_HILL_BASE_Y = 380; // bottom of back hill row
+  // QA fix 2026-05-30 PM: lowered base from 380 → groundY so the back hill
+  // silhouette extends BEHIND the front hill (proper depth overlap) instead
+  // of stopping in mid-sky. Peaks shifted from y=320 → y=350 base so they
+  // still poke above the front-hill ridge without floating disconnected
+  // from the landscape.
+  const BACK_HILL_BASE_Y = groundY;
+  const BACK_HILL_TOP_BASE = 350;
   const backRidgePoints = [
     { x:   0, peakDip: 30 },
     { x:  60, peakDip: 12 },
     { x: 120, peakDip: 40 },
     { x: 200, peakDip: 18 },
     { x: 280, peakDip: 36 },
-    { x: 360, peakDip:  6 },  // dips a bit lower so spire reads tall
+    { x: 360, peakDip: 18 },
     { x: 440, peakDip: 32 },
     { x: 520, peakDip: 14 },
     { x: 600, peakDip: 28 },
@@ -62,7 +66,7 @@ export function drawVillage(container, spec) {
       const eased = 0.5 - 0.5 * Math.cos(t * Math.PI);
       const dip = a.peakDip + (b.peakDip - a.peakDip) * eased;
       const x = a.x + s * 4;
-      const y = 320 + dip;
+      const y = BACK_HILL_TOP_BASE + dip;
       backRidgeSamples.push([x, y]);
     }
   }
@@ -135,44 +139,10 @@ export function drawVillage(container, spec) {
   frontHills.alpha = 0.95;
   container.addChild(frontHills);
 
-  // Distant church spire — ONE recognizable landmark behind the treeline.
-  // Tall narrow stone tower with a stepped pointed cap and a tiny cross at
-  // the apex. Implies "another village beyond the trees" without trying to
-  // render rooftops at distance.
-  const spire = new Graphics();
-  const SPIRE_X = 360;            // center x in left-mid horizon
-  const SPIRE_TOP_Y = 270;        // peak y
-  const SPIRE_BASE_Y = 360;       // ground line (behind tree heights)
-  const SPIRE_W = 12;             // body width
-  // Body — stone-base tower.
-  spire.rect(SPIRE_X - SPIRE_W / 2, SPIRE_TOP_Y + 8, SPIRE_W, SPIRE_BASE_Y - (SPIRE_TOP_Y + 8))
-    .fill(PIXEL_PALETTE.STONE_BASE);
-  // 1px highlight on left (sun back-light).
-  spire.rect(SPIRE_X - SPIRE_W / 2, SPIRE_TOP_Y + 8, 1, SPIRE_BASE_Y - (SPIRE_TOP_Y + 8))
-    .fill(PIXEL_PALETTE.STONE_LIGHT);
-  // Stepped pointed cap (3 narrowing rows).
-  spire.rect(SPIRE_X - 5, SPIRE_TOP_Y + 8, 10, 3).fill(PIXEL_PALETTE.STONE_DARK);
-  spire.rect(SPIRE_X - 3, SPIRE_TOP_Y + 5, 6, 3).fill(PIXEL_PALETTE.STONE_DARK);
-  spire.rect(SPIRE_X - 1, SPIRE_TOP_Y + 2, 2, 3).fill(PIXEL_PALETTE.STONE_DARK);
-  // Tiny cross at apex — vertical 1×3 + horizontal 3×1.
-  spire.rect(SPIRE_X, SPIRE_TOP_Y - 1, 1, 3).fill(PIXEL_PALETTE.STONE_LIGHT);
-  spire.rect(SPIRE_X - 1, SPIRE_TOP_Y, 3, 1).fill(PIXEL_PALETTE.STONE_LIGHT);
-  spire.alpha = 0.85;
-  container.addChild(spire);
-
-  // Distant smoke wisps — 2 thin 1px columns rising from BEHIND the treeline,
-  // implying hidden villagers cooking. Anti-slasher: thin pale, NOT thick
-  // black plumes.
-  const smokeWisps = new Graphics();
-  const SMOKE_POSITIONS = [
-    { x: 180, baseY: villageHorizonY - 8, height: 14 },
-    { x: 480, baseY: villageHorizonY - 12, height: 18 },
-  ];
-  for (const s of SMOKE_POSITIONS) {
-    smokeWisps.rect(s.x, s.baseY - s.height, 1, s.height).fill(PIXEL_PALETTE.VILLAGE_SMOKE);
-  }
-  smokeWisps.alpha = 0.45;
-  container.addChild(smokeWisps);
+  // QA fix 2026-05-30 PM: removed the distant church spire — at the rendered
+  // scale it read as a gray fountain/obelisk, not a spire, and was redundant
+  // with the actual chapel facade on the right. Smoke wisps removed alongside
+  // (they paired with the spire/village layer that's no longer present).
 
   // Legacy village rendering — disabled in favour of the treeline above.
   // Kept commented out below as historical reference; remove on next cleanup.

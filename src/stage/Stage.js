@@ -8,7 +8,6 @@ import { PALETTE, SCALE } from '../art/placeholders/constants.js';
 import { createNaveRoomPixelArt } from '../art/pixelPalette/chapel/nave.js';
 import { createChapelFrontDoor } from '../art/pixelPalette/chapel/frontDoor.js';
 import { createChapelCeilingPixelArt } from '../art/pixelPalette/chapel/ceiling.js';
-import { createChapelExteriorPixelArt } from '../art/pixelPalette/chapel/exterior.js';
 import { createChapelDayAmbientPixelArt } from '../art/pixelPalette/chapelBustle/dayAmbient.js';
 import { createPewPixelArt } from '../art/pixelPalette/chapelBustle/pew.js';
 import { createCandleShrinePixelArt } from '../art/pixelPalette/chapelBustle/candleShrine.js';
@@ -53,17 +52,14 @@ export class Stage {
         : this._naveContainerPainterly;
     this.view.addChild(this._activeNaveContainer);
 
-    // Pixel-art ceiling + exterior fill the bands above and to the left of
-    // chapelBounds. Visibility is toggled with the M-key render mode swap;
-    // painterly mode hides them so the pixel grammar doesn't clash with the
-    // painterly back wall.
+    // Pixel-art ceiling fills the band above chapelBounds. Visibility toggled
+    // with the M-key render mode swap so painterly mode doesn't clash with
+    // the painterly back wall. (The left-of-bounds "exterior" container was
+    // deleted 2026-05-30 — it rendered outdoor art that read as bleed against
+    // the chapel interior; worldOutside owns the entry scene now.)
     this._ceilingContainer = createChapelCeilingPixelArt({ bounds });
     this.view.addChild(this._ceilingContainer);
     this._ceilingContainer.visible = getRenderMode() === RENDER_MODE.PIXELART;
-
-    this._exteriorContainer = createChapelExteriorPixelArt({ bounds });
-    this.view.addChild(this._exteriorContainer);
-    this._exteriorContainer.visible = getRenderMode() === RENDER_MODE.PIXELART;
 
     this._unsubRenderMode = onRenderModeChange((next) => {
       const target =
@@ -77,7 +73,6 @@ export class Stage {
       }
       const pixel = next === RENDER_MODE.PIXELART;
       this._ceilingContainer.visible = pixel;
-      this._exteriorContainer.visible = pixel;
       this._pixelPropsContainer.visible = pixel;
       this._dayAmbientContainer.visible = pixel;
       this._pewsContainer.visible = pixel;
