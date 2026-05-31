@@ -27,6 +27,12 @@ export async function loadStage(url) {
   }
 }
 
+// For prod builds: bypass fetch and normalize a statically-imported JSON
+// payload directly. main.js uses this path so Vite bundles the stage data.
+export function normalizeStage(data) {
+  return normalize(data);
+}
+
 function normalize(data) {
   // PRD Resolved Design Q5: the `fallback` key must be ABSENT from
   // victim.personality.bias — wrong-waypoint else-branch is the haunt's primary

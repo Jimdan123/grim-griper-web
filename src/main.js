@@ -2,7 +2,10 @@ import { Container } from 'pixi.js';
 import { GameLoop } from './engine/GameLoop.js';
 import { InputManager } from './engine/InputManager.js';
 import { GameState } from './engine/GameState.js';
-import { loadStage } from './stage/StageLoader.js';
+import { normalizeStage } from './stage/StageLoader.js';
+import stageDataRaw from './stages/confession-room.json';
+import boothPuzzle from './stages/puzzles/booth.json';
+import sacristyPuzzle from './stages/puzzles/sacristy.json';
 import { Stage } from './stage/Stage.js';
 import { Player } from './entities/Player.js';
 import { EvidenceItem } from './entities/EvidenceItem.js';
@@ -58,7 +61,12 @@ import { PuzzleScene } from './puzzles/PuzzleScene.js';
   input.attach();
 
   const gameState = new GameState();
-  const stageData = await loadStage('/src/stages/confession-room.json');
+  const stageData = normalizeStage(stageDataRaw);
+  // Puzzle configs bundled at build time so prod doesn't 404 on fetch.
+  const PUZZLE_CONFIGS = {
+    'src/stages/puzzles/booth.json': boothPuzzle,
+    'src/stages/puzzles/sacristy.json': sacristyPuzzle,
+  };
   const stage = new Stage(stageData, gameState);
   worldInside.addChild(stage.view);
 
@@ -194,18 +202,15 @@ import { PuzzleScene } from './puzzles/PuzzleScene.js';
       }
       let config = puzzleCache.get(url);
       if (!config) {
-        try {
-          const res = await fetch(url);
-          if (!res.ok) throw new Error(`puzzle fetch ${res.status}`);
-          config = await res.json();
-          puzzleCache.set(url, config);
-        } catch (err) {
+        config = PUZZLE_CONFIGS[url];
+        if (!config) {
           // eslint-disable-next-line no-console
-          console.error('[PuzzleHost] failed to load puzzle', url, err);
+          console.error('[PuzzleHost] no bundled puzzle config for', url);
           _puzzlePending = false;
           if (typeof onUnmount === 'function') onUnmount({ reason: 'load-failed' });
           return;
         }
+        puzzleCache.set(url, config);
       }
       // Guard against the unlikely case that ESC fired between fetch and now.
       if (_activePuzzle) { _puzzlePending = false; return; }
