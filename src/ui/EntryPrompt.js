@@ -55,6 +55,21 @@ export class EntryPrompt {
     this.view.visible = !!visible;
   }
 
+  // Swap the displayed message. Re-fits the pill background to the new
+  // text width so the BG never under- or over-shoots the label. Used by
+  // actionHandlers to switch between "Press E to enter the chapel" (outside
+  // door) and the puzzle-door prompts ("Press E to enter the booth", etc.).
+  setMessage(message) {
+    if (this._text.text === message) return;
+    this._text.text = message;
+    const w = Math.ceil(this._text.width) + PAD_X * 2;
+    const h = Math.ceil(this._text.height) + PAD_Y * 2;
+    this._bg.clear();
+    this._bg
+      .roundRect(-w / 2, -h / 2, w, h, 6)
+      .fill({ color: BG_COLOR, alpha: BG_ALPHA });
+  }
+
   // Pin to bottom-center of the current viewport. Called once on boot and
   // again on window resize.
   setScreenPosition(viewportWidth, viewportHeight) {

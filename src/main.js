@@ -32,31 +32,22 @@ import { createApp, fitWorldToViewport } from './boot/createApp.js';
 import { mountAmbientMotion } from './scene/ambientMounts.js';
 import { setupChapelBustle } from './scene/chapelBustle.js';
 import { createSceneSwap, resolveReaperSpawn } from './scene/sceneSwap.js';
-import { CameraController } from './scene/CameraController.js';
 import { createActionHandlers } from './engine/actionHandlers.js';
 
 (async () => {
   const app = await createApp();
 
-  // World container holds the camera, which holds the two scene-swap parents.
-  // - `world` owns the contain-mode letterbox transform (fitWorldToViewport)
-  // - `camera` owns the zoom transform for puzzle-door beats (ticket #23)
-  // - `worldOutside` / `worldInside` are the scene-swap pair toggled by visibility
-  // The Player sprite is NOT under camera — it stays on world directly so its
-  // movement coords are independent of zoom, and it is hidden while zoomed
-  // (per ticket #23 open Q1).
+  // World container holds the two scene-swap parents. Both ride the same
+  // world.scale + position so the contain-mode letterbox math applies
+  // identically. HUD elements mount on app.stage and stay always-on.
   const world = new Container();
   app.stage.addChild(world);
-  const camera = new Container();
-  camera.label = 'camera';
-  world.addChild(camera);
   const worldOutside = new Container();
   worldOutside.label = 'world-outside';
   const worldInside = new Container();
   worldInside.label = 'world-inside';
-  camera.addChild(worldOutside);
-  camera.addChild(worldInside);
-  const cameraController = new CameraController(camera);
+  world.addChild(worldOutside);
+  world.addChild(worldInside);
 
   const fit = () => fitWorldToViewport(app, world);
   fit();
@@ -195,32 +186,17 @@ import { createActionHandlers } from './engine/actionHandlers.js';
     evidenceItems,
     ghostReplays,
     hud,
-    cameraController,
   });
 
   let _shownInsideTutorial = false;
 
   const loop = new GameLoop(app.ticker);
   loop
-    .add(cameraController)
     .add(stage)
     .add(sightFSM)
     .add(actionHandlers)
     .add(sceneSwap)
     .add(player)
-    .add({
-      // Hide + disable the Player while the camera is zoomed into a puzzle
-      // door (ticket #23 open Q1 — the player's perspective during the
-      // puzzle is the puzzle surface, not the Pilgrim sprite). Re-enables
-      // on zoomOut.
-      update: () => {
-        const zoomed = cameraController.isZoomed();
-        if (player?.view && player.view.visible === zoomed) {
-          player.view.visible = !zoomed;
-        }
-        if (player?.setDisabled) player.setDisabled(zoomed);
-      },
-    })
     .add(hud.sightMeter)
     .add(hud.collectionFeedback)
     .add(hud.sceneFadeOverlay)

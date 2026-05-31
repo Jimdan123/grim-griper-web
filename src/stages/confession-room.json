@@ -69,16 +69,18 @@
   },
   "puzzleDoors": [
     {
-      "id": "confessionBoothDoor",
-      "waypointId": "confessionBooth",
-      "proximityPx": 60,
-      "zoomBounds": { "x": 640, "y": 360, "w": 280, "h": 200 }
+      "id": "boothDoor",
+      "kind": "booth",
+      "x": 640,
+      "proximityPx": 40,
+      "enterMessage": "Press E to enter the booth"
     },
     {
       "id": "sacristyDoor",
-      "waypointId": "sacristy",
-      "proximityPx": 60,
-      "zoomBounds": { "x": 920, "y": 360, "w": 280, "h": 200 }
+      "kind": "sacristy",
+      "x": 920,
+      "proximityPx": 40,
+      "enterMessage": "Press E to enter the sacristy"
     }
   ],
   "victim": {

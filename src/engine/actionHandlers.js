@@ -6,18 +6,20 @@
 
 import { computeHauntFearDelta } from '../math/fearMath.js';
 
-function findPuzzleDoorInProximity(puzzleDoors, waypointById, playerX) {
+const HAUNT_COOLDOWN_MS = 15_000;
+const FEAR_MAX = 100;
+const DEFAULT_DOOR_PROXIMITY_PX = 40;
+
+function findPuzzleDoorInProximity(puzzleDoors, playerX) {
   for (const door of puzzleDoors) {
-    const wp = waypointById.get(door.waypointId);
-    if (!wp || !Number.isFinite(wp.x)) continue;
-    const prox = Number.isFinite(door.proximityPx) ? door.proximityPx : 60;
-    if (Math.abs(playerX - wp.x) <= prox) return door;
+    if (!Number.isFinite(door.x)) continue;
+    const prox = Number.isFinite(door.proximityPx) ? door.proximityPx : DEFAULT_DOOR_PROXIMITY_PX;
+    if (Math.abs(playerX - door.x) <= prox) return door;
   }
   return null;
 }
 
-const HAUNT_COOLDOWN_MS = 15_000;
-const FEAR_MAX = 100;
+const DEFAULT_OUTSIDE_DOOR_MESSAGE = 'Press E to enter the chapel';
 // Only SHATTER is wired this slice; the others remain mapped so slice 4
 // only needs to flip the SET below.
 const HAUNT_ACTION_MAP = {
@@ -43,55 +45,57 @@ export function createActionHandlers({
   evidenceItems,
   ghostReplays,
   hud,
-  cameraController,
 }) {
   const puzzleDoors = Array.isArray(stageData.puzzleDoors) ? stageData.puzzleDoors : [];
-  const waypointById = new Map(
-    (stageData.waypoints || []).map((w) => [w.id, w]),
-  );
 
   return {
     update: () => {
-      // PAUSE while zoomed → zoomOut (ESC graceful exit per ticket #23 design).
-      // While zoomed all other action wiring is suppressed — the puzzle UI
-      // owns input (slice 23b lands the puzzle surface; for 23a infra-only,
-      // zoom in/out is the entire interaction).
-      if (cameraController?.isZoomed()) {
-        if (input.wasPressedThisFrame('PAUSE')) {
-          cameraController.zoomOut();
-        }
-        // Still drive the per-frame HUD readouts at the bottom of this fn —
-        // fall through past the gated handlers.
-        hud.sightMeter.setSightBudget(sightBudget.getMs(), sightBudget.capacityMs);
-        hud.evidenceCounter.setCount(gameState.collectedEvidence.size, 4);
-        return;
+      // INTERACT prompt — picks one of three contexts each frame:
+      //   1. Outside chapel + at front door → "Press E to enter the chapel"
+      //   2. Inside chapel + INVESTIGATION + at a puzzle door → that door's enterMessage
+      //   3. Otherwise → hidden
+      // The entryPrompt is one shared HUD pill; setMessage swaps the text +
+      // re-fits the pill bg width so the label stays centered.
+      const outsideAtDoor =
+        sceneSwap.state === 'outside' && sceneSwap.isInProximity();
+      const puzzleDoorAtPlayer =
+        sceneSwap.state === 'inside' && stage.phase.is('INVESTIGATION')
+          ? findPuzzleDoorInProximity(puzzleDoors, player.view.x)
+          : null;
+      const promptVisible = outsideAtDoor || puzzleDoorAtPlayer !== null;
+      if (promptVisible) {
+        const msg = outsideAtDoor
+          ? DEFAULT_OUTSIDE_DOOR_MESSAGE
+          : puzzleDoorAtPlayer.enterMessage || `Press E to enter the ${puzzleDoorAtPlayer.kind}`;
+        hud.entryPrompt.setMessage(msg);
+      }
+      if (hud.entryPrompt.view.visible !== promptVisible) {
+        hud.entryPrompt.setVisible(promptVisible);
       }
 
-      // INTERACT (door entry) — must run BEFORE COLLECT so a press at the
-      // door triggers entry instead of a no-op collect.
-      const showPrompt =
-        sceneSwap.state === 'outside' && sceneSwap.isInProximity();
-      if (hud.entryPrompt.view.visible !== showPrompt) {
-        hud.entryPrompt.setVisible(showPrompt);
-      }
+      // INTERACT (chapel front door) — outside → enter sequence.
       if (input.wasPressedThisFrame('INTERACT') && sceneSwap.canConsumeInteract()) {
         sceneSwap.beginEnter();
         return; // consume E for this frame
       }
 
-      // INTERACT (puzzle door zoom-in) — Day phase only, inside chapel only.
-      // Suppressed during HAUNT per ticket #23 ("zoom is a Day-phase beat").
-      if (
-        cameraController &&
-        sceneSwap.state === 'inside' &&
-        stage.phase.is('INVESTIGATION') &&
-        input.wasPressedThisFrame('INTERACT')
-      ) {
-        const door = findPuzzleDoorInProximity(puzzleDoors, waypointById, player.view.x);
-        if (door) {
-          cameraController.zoomTo(door.zoomBounds, { id: door.id });
-          return; // consume E for this frame
-        }
+      // INTERACT (puzzle door) — inside chapel + INVESTIGATION + at a door.
+      // Real puzzle UI is not built yet (slice TBD); for #23a-walled-rooms
+      // gate we log + show a feedback bubble so the wiring is visible.
+      if (input.wasPressedThisFrame('INTERACT') && puzzleDoorAtPlayer) {
+        // eslint-disable-next-line no-console
+        console.log('[PuzzleDoor] entered', {
+          id: puzzleDoorAtPlayer.id,
+          kind: puzzleDoorAtPlayer.kind,
+          playerX: Math.round(player.view.x),
+        });
+        const screenPt = world.toGlobal({ x: player.view.x, y: player.view.y - 40 });
+        hud.collectionFeedback.show(
+          `Entered the ${puzzleDoorAtPlayer.kind}`,
+          screenPt.x,
+          screenPt.y,
+        );
+        return; // consume E
       }
 
       // COLLECT — only meaningful while sight is on (PRD §5/§9).
