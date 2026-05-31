@@ -2,12 +2,10 @@
 // Split from src/art/pixelPalette.js per refactor issue #1 Phase 2a.
 
 import { Container } from 'pixi.js';
-import {
-  createPixelArtAltar,
-  createPixelArtLectern,
-  createPixelArtConfessionBooth,
-  createPixelArtSacristyDetails,
-} from './furniture.js';
+import { createPixelArtAltar } from './sanctuary/altar.js';
+import { createPixelArtLectern } from './sanctuary/lectern.js';
+import { createPixelArtConfessionBooth } from './sanctuary/booth.js';
+import { createPixelArtSacristyDetails } from './sacristy.js';
 
 export function createPixelArtConfessionRoomProps({ floorY } = {}) {
   if (floorY == null) {
