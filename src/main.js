@@ -154,7 +154,7 @@ import { PuzzleScene } from './puzzles/PuzzleScene.js';
   const sightBudget = new SightBudget(gameState.reaperTraits.sightDurationMs);
   const sightFX = new SightFX();
   sightFX.attach(worldInside, evidenceItems, ghostReplays);
-  const sightFSM = new SightFSM({ input, budget: sightBudget, fx: sightFX });
+  const sightFSM = new SightFSM({ input, budget: sightBudget, fx: sightFX, victim });
 
   const hud = setupHud({ app, ticker: app.ticker, stageData, sightBudget, gameState });
 
@@ -274,6 +274,15 @@ import { PuzzleScene } from './puzzles/PuzzleScene.js';
     .add(actionHandlers)
     .add(sceneSwap)
     .add(player)
+    .add({
+      // Pump victim perception inputs each frame so HIDING's Reaper-
+      // proximity exit + PRAYING sight-drain getter observe real state.
+      // Mounted after sightFSM + player so we read their post-tick state.
+      update: () => {
+        victim.setReaperX(player.view.x);
+        victim.setSightOn(sightFSM.isOn());
+      },
+    })
     .add(hud.sightMeter)
     .add(hud.collectionFeedback)
     .add(hud.sceneFadeOverlay)

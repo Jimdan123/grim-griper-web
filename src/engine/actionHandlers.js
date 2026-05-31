@@ -4,8 +4,6 @@
 // per-frame EntryPrompt visibility, SightMeter readout, EvidenceCounter,
 // and RadialHauntMenu position.
 
-import { computeHauntFearDelta } from '../math/fearMath.js';
-
 const HAUNT_COOLDOWN_MS = 15_000;
 const FEAR_MAX = 100;
 const DEFAULT_DOOR_PROXIMITY_PX = 40;
@@ -28,7 +26,6 @@ const HAUNT_ACTION_MAP = {
   HAUNT_3: 'VOICE',
   HAUNT_4: 'RISE',
 };
-const HAUNTS_WIRED_THIS_SLICE = new Set(['SHATTER']);
 
 export function createActionHandlers({
   input,
@@ -192,28 +189,21 @@ export function createActionHandlers({
         for (const [action, hauntId] of Object.entries(HAUNT_ACTION_MAP)) {
           if (!input.wasPressedThisFrame(action)) continue;
           if (!gameState.unlockedHaunts.has(hauntId)) continue;
-          if (!HAUNTS_WIRED_THIS_SLICE.has(hauntId)) continue;
 
           const now = performance.now();
 
-          // Drop entries older than HAUNT_COOLDOWN_MS from recentHaunts,
-          // then project to the hauntId→ms map fearMath wants.
+          // Drop entries older than HAUNT_COOLDOWN_MS from recentHaunts so
+          // applyHaunt sees an accurate "recent" set when it consults
+          // gameState.recentHaunts via _buildRecentHauntsMap.
           gameState.recentHaunts = gameState.recentHaunts.filter(
             (entry) => now - entry.timeMs < HAUNT_COOLDOWN_MS,
           );
-          const recentHauntsMap = {};
-          for (const entry of gameState.recentHaunts) {
-            recentHauntsMap[entry.hauntId] = entry.timeMs;
-          }
 
-          const delta = computeHauntFearDelta({
-            haunt: hauntId,
-            waypoint: victim.currentWaypointId,
-            recentHaunts: recentHauntsMap,
-            victimState: victim.state,
-            traits: gameState.reaperTraits,
-            now,
-          });
+          // Single entry point — Victim drives FSM transitions, side effects,
+          // and fear delta. actionHandlers keeps the existing recentHaunts +
+          // phase2EventLog bookkeeping below (applyHaunt does NOT push events).
+          const result = victim.applyHaunt(hauntId, { now });
+          const delta = result.fearDelta;
 
           // Record the firing in recentHaunts BEFORE checking delta=0 — a
           // 0-delta re-fire still resets the cooldown clock per PRD's

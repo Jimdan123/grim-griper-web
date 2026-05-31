@@ -11,10 +11,15 @@
 import { StateMachine } from '../engine/StateMachine.js';
 
 export class SightFSM {
-  constructor({ input, budget, fx }) {
+  constructor({ input, budget, fx, victim }) {
     this.input = input;
     this.budget = budget;
     this.fx = fx;
+    // Optional victim ref — when present, SightBudget.tick gets the
+    // victim.sightDrainMultiplier (3 while PRAYING, 1 otherwise) per PRD
+    // §6.5. Absent for tests / older callers, where the multiplier defaults
+    // to 1 inside SightBudget.tick.
+    this.victim = victim || null;
 
     // Latched after exhaustion-triggered force-OFF. Prevents ON ⇄ OFF
     // oscillation when SHIFT is held past budget=0: budget recharges fast
@@ -50,7 +55,8 @@ export class SightFSM {
     // Tick budget against the *current* state (not the desired one) so a single
     // frame that drains to zero can still transition ON → OFF after the tick.
     const currentlyOn = this.fsm.is('ON');
-    this.budget.tick(dtMs, currentlyOn);
+    const drainMultiplier = this.victim ? this.victim.sightDrainMultiplier : 1;
+    this.budget.tick(dtMs, currentlyOn, drainMultiplier);
 
     if (currentlyOn) {
       // Auto-cutoff: budget reached zero this frame, force OFF.

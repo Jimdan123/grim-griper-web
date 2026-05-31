@@ -189,6 +189,15 @@ export class Stage {
             }
 
             if (this.victim) this.victim.update(dtMs);
+
+            // Victim FSM may have emitted a stage-fail (SOUL_ESCAPED /
+            // SOUL_SAVED / HELP_ARRIVED). Victim._emitStageFail already
+            // pushed the {type:'stageFailed', reason} event onto
+            // phase2EventLog and latched stageFailReason — we just observe
+            // it and transition to SCORE. Latch guarantees one-shot.
+            if (this.victim && this.victim.stageFailReason && !this.phase.is('SCORE')) {
+              this.phase.transition('SCORE');
+            }
           },
           exit: () => {
             this._haunt_placeholder.visible = false;

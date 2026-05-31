@@ -18,11 +18,17 @@ export class SightBudget {
     this._valueMs = capacityMs;
   }
 
-  tick(dtMs, isOn) {
+  tick(dtMs, isOn, drainMultiplier = 1) {
     if (dtMs <= 0) return;
     if (isOn) {
       // Drain. Clamp at 0 — SightFSM checks isExhausted() after to force OFF.
-      this._valueMs = Math.max(0, this._valueMs - dtMs);
+      // drainMultiplier scales the drain rate (e.g. 3× while Victim is PRAYING
+      // per PRD §6.5). Defaults to 1 so existing tests + callers are
+      // unaffected.
+      const mult = Number.isFinite(drainMultiplier) && drainMultiplier > 0
+        ? drainMultiplier
+        : 1;
+      this._valueMs = Math.max(0, this._valueMs - dtMs * mult);
     } else {
       // Recharge at 2× rate. Clamp at capacity — never exceed.
       this._valueMs = Math.min(this.capacityMs, this._valueMs + dtMs * RECHARGE_MULTIPLIER);
