@@ -1,5 +1,5 @@
 import { Container, Graphics, Text } from 'pixi.js';
-import { PALETTE } from '../art/placeholders.js';
+import { PALETTE } from '../art/placeholders/constants.js';
 
 // RadialHauntMenu — four-wedge ring around the Reaper, visible only in HAUNT.
 // Slice 3 only fires SHATTER (key 1). Greyed wedges = haunts NOT in

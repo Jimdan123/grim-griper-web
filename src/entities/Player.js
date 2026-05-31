@@ -1,4 +1,5 @@
-import { createReaperPlaceholder, SCALE } from '../art/placeholders.js';
+import { createReaperPlaceholder } from '../art/placeholders/reaper.js';
+import { SCALE } from '../art/placeholders/constants.js';
 
 const DEFAULT_MOVE_SPEED = 220;
 

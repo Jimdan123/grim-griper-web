@@ -21,7 +21,7 @@
 // ledger (when the booth opens) and the spade (when the crypt entrance is
 // found).
 
-import { createEvidencePlaceholder } from '../art/placeholders.js';
+import { createEvidencePlaceholder } from '../art/placeholders/evidence.js';
 
 const PROXIMITY_RADIUS_PX = 60;
 

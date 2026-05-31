@@ -1,5 +1,5 @@
 import { Container, Graphics } from 'pixi.js';
-import { PALETTE } from '../art/placeholders.js';
+import { PALETTE } from '../art/placeholders/constants.js';
 
 // FearBar — horizontal Phase-2 stat indicator pinned to top-center of the
 // screen. 0..100 scalar; FEAR=100 triggers SCORE phase + EndScreen.

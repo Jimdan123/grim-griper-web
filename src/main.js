@@ -27,14 +27,18 @@ import { scoreRun } from './scoring/scoreRun.js';
 import {
   createAldricPortraitCard,
   createAldricWalkingSprite,
-  createConfessionRoomForeground,
-  createConfessionRoomProps,
   createFatedDeathPose,
+} from './art/placeholders/aldric.js';
+import {
+  createConfessionRoomForeground,
   createStainedWindowSilhouette,
   createVignette,
+} from './art/placeholders/decor.js';
+import {
+  createConfessionRoomProps,
   CONFESSION_ROOM_CANDLES,
   STAINED_WINDOW_SHAFT,
-} from './art/placeholders.js';
+} from './art/placeholders/confessionRoom.js';
 import {
   createAldricPixelSprite,
   createReaperPixelSprite,

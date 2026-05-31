@@ -1,5 +1,5 @@
 import { Container, Graphics } from 'pixi.js';
-import { PALETTE } from '../art/placeholders.js';
+import { PALETTE } from '../art/placeholders/constants.js';
 
 // Visual constants — locked here so #7 VP can find them on next pass.
 const BAR_W = 180;

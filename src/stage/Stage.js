@@ -4,10 +4,9 @@ import {
   createChapelBackground,
   createDoorArch,
   createSacristyRoom,
-  createWaypointMarker,
-  PALETTE,
-  SCALE,
-} from '../art/placeholders.js';
+} from '../art/placeholders/chapel.js';
+import { createWaypointMarker } from '../art/placeholders/evidence.js';
+import { PALETTE, SCALE } from '../art/placeholders/constants.js';
 import {
   createNaveRoomPixelArt,
   createChapelFrontDoor,

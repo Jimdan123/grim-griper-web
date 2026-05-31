@@ -15,7 +15,7 @@
 // desaturates them when Reaper Sight is ON, matching the static props.
 
 import { Container, Graphics } from 'pixi.js';
-import { PALETTE } from './placeholders.js';
+import { PALETTE } from './placeholders/constants.js';
 
 // ---------------------------------------------------------------------------
 // CandleFlame — small warm glow that breathes (alpha + slight scale oscillation).

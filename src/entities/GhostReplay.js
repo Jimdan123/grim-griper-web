@@ -11,7 +11,7 @@
 // render-mode global, callers may inject `viewFactory(evidenceData) -> Container`.
 // Falls back to the painterly placeholder when no factory is provided.
 
-import { createGhostPlaceholder } from '../art/placeholders.js';
+import { createGhostPlaceholder } from '../art/placeholders/evidence.js';
 
 const GHOST_ALPHA = 0.4;
 

@@ -11,7 +11,7 @@
 
 import { ColorMatrixFilter } from 'pixi.js';
 import { OutlineFilter } from 'pixi-filters';
-import { PALETTE } from '../art/placeholders.js';
+import { PALETTE } from '../art/placeholders/constants.js';
 
 const OUTLINE_THICKNESS = 3;
 const OUTLINE_QUALITY = 0.5;

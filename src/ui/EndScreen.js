@@ -1,5 +1,5 @@
 import { Container, Graphics, Text } from 'pixi.js';
-import { PALETTE } from '../art/placeholders.js';
+import { PALETTE } from '../art/placeholders/constants.js';
 
 // EndScreen — full-screen overlay shown when FEAR=100 ("SOUL CLAIMED") or
 // when FLEEING/CALLING_FOR_HELP completes ("SOUL ESCAPED"). Slice 3 only
