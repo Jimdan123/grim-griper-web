@@ -19,7 +19,7 @@ import { RadialHauntMenu } from './RadialHauntMenu.js';
 import { FearBar } from './FearBar.js';
 import { EndScreen } from './EndScreen.js';
 import { createAldricPortraitCard } from '../art/placeholders/aldric/portraitCard.js';
-import { createVignette } from '../art/placeholders/decor.js';
+import { createVignette } from '../art/placeholders/decor/vignette.js';
 
 export function setupHud({ app, ticker, stageData, sightBudget, gameState }) {
   const root = new UIRoot(app.stage);

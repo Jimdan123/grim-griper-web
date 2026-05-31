@@ -14,10 +14,8 @@ import { SightFSM } from './sight/SightFSM.js';
 import { wireEndRunController } from './scoring/endRunController.js';
 import { createAldricWalkingSprite } from './art/placeholders/aldric/walkingSprite.js';
 import { createFatedDeathPose } from './art/placeholders/aldric/fatedDeathPose.js';
-import {
-  createConfessionRoomForeground,
-  createStainedWindowSilhouette,
-} from './art/placeholders/decor.js';
+import { createConfessionRoomForeground } from './art/placeholders/decor/foreground.js';
+import { createStainedWindowSilhouette } from './art/placeholders/decor/stainedWindow.js';
 import { createConfessionRoomProps } from './art/placeholders/confessionRoom/props/composite.js';
 import { createAldricPixelSprite } from './art/pixelPalette/sprites/aldric.js';
 import { createReaperPixelSprite } from './art/pixelPalette/sprites/reaper.js';
