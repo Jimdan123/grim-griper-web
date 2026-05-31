@@ -7,7 +7,7 @@ import { CandleFlame, DustMotes, SmokeWisp } from '../art/ambientMotion.js';
 import {
   CONFESSION_ROOM_CANDLES,
   STAINED_WINDOW_SHAFT,
-} from '../art/placeholders/confessionRoom.js';
+} from '../art/placeholders/confessionRoom/geometry.js';
 
 export function mountAmbientMotion({ worldInside }) {
   const updates = [];
