@@ -1,10 +1,8 @@
 import { Container, Text } from 'pixi.js';
 import { StateMachine } from '../engine/StateMachine.js';
-import {
-  createChapelBackground,
-  createDoorArch,
-  createSacristyRoom,
-} from '../art/placeholders/chapel.js';
+import { createChapelBackground } from '../art/placeholders/chapel/background.js';
+import { createDoorArch } from '../art/placeholders/chapel/doorArch.js';
+import { createSacristyRoom } from '../art/placeholders/chapel/sacristyRoom.js';
 import { createWaypointMarker } from '../art/placeholders/evidence/waypoint.js';
 import { PALETTE, SCALE } from '../art/placeholders/constants.js';
 import { createNaveRoomPixelArt } from '../art/pixelPalette/chapel/nave.js';
