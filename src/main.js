@@ -21,10 +21,8 @@ import {
   createStainedWindowSilhouette,
 } from './art/placeholders/decor.js';
 import { createConfessionRoomProps } from './art/placeholders/confessionRoom.js';
-import {
-  createAldricPixelSprite,
-  createReaperPixelSprite,
-} from './art/pixelPalette/sprites.js';
+import { createAldricPixelSprite } from './art/pixelPalette/sprites/aldric.js';
+import { createReaperPixelSprite } from './art/pixelPalette/sprites/reaper.js';
 import { createPixelArtGhostPlaceholder } from './art/pixelPalette/ghosts.js';
 import { createOutsideChapelScenePixelArt } from './art/pixelPalette/outsideScene/composite.js';
 import {

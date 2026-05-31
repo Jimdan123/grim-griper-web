@@ -5,7 +5,7 @@
 
 import { AmbientNPC } from '../entities/AmbientNPC.js';
 import { ChatterScheduler } from '../ui/ChatterSystem.js';
-import { createParishionerSpritePixelArt } from '../art/pixelPalette/sprites.js';
+import { createParishionerSpritePixelArt } from '../art/pixelPalette/sprites/parishioner.js';
 
 // Five NPCs (within the 4-6 envelope) at positions that sit naturally
 // between the altar (x=220), lectern (x=500), and booth (x=780) anchors.
