@@ -63,9 +63,13 @@ import { PuzzleScene } from './puzzles/PuzzleScene.js';
   const gameState = new GameState();
   const stageData = normalizeStage(stageDataRaw);
   // Puzzle configs bundled at build time so prod doesn't 404 on fetch.
+  // Keys match the puzzleFile strings in confession-room.json. Stored both
+  // with and without a leading slash so the JSON can use either form.
   const PUZZLE_CONFIGS = {
     'src/stages/puzzles/booth.json': boothPuzzle,
     'src/stages/puzzles/sacristy.json': sacristyPuzzle,
+    '/src/stages/puzzles/booth.json': boothPuzzle,
+    '/src/stages/puzzles/sacristy.json': sacristyPuzzle,
   };
   const stage = new Stage(stageData, gameState);
   worldInside.addChild(stage.view);
