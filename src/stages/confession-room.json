@@ -73,14 +73,20 @@
       "kind": "booth",
       "x": 640,
       "proximityPx": 40,
-      "enterMessage": "Press E to enter the booth"
+      "enterMessage": "Press E to enter the booth",
+      "puzzleFile": "/src/stages/puzzles/booth.json",
+      "evidenceUnlockedId": "confessionLedger",
+      "successCopy": "Ledger found"
     },
     {
       "id": "sacristyDoor",
       "kind": "sacristy",
       "x": 920,
       "proximityPx": 40,
-      "enterMessage": "Press E to enter the sacristy"
+      "enterMessage": "Press E to enter the sacristy",
+      "puzzleFile": "/src/stages/puzzles/sacristy.json",
+      "evidenceUnlockedId": "limeSpade",
+      "successCopy": "Spade found"
     }
   ],
   "victim": {

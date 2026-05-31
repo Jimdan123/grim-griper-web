@@ -1,0 +1,31 @@
+{
+  "id": "sacristyPuzzle",
+  "title": "Arrange the burial rite",
+  "subtitle": "Drag each implement into the order Aldric used it.",
+  "backdrop": {
+    "kind": "wood",
+    "width": 800,
+    "height": 480,
+    "color": "0x3a2a1a",
+    "edgeColor": "0x1a120a"
+  },
+  "slots": [
+    { "id": "slot1", "x": 100, "y": 280, "w": 140, "h": 100 },
+    { "id": "slot2", "x": 260, "y": 280, "w": 140, "h": 100 },
+    { "id": "slot3", "x": 420, "y": 280, "w": 140, "h": 100 },
+    { "id": "slot4", "x": 580, "y": 280, "w": 140, "h": 100 }
+  ],
+  "pieces": [
+    { "id": "p_quicklime", "text": "Quicklime sack", "x": 100, "y": 80,  "w": 140, "h": 100, "color": "0xcbb88a" },
+    { "id": "p_spade",     "text": "Spade",          "x": 260, "y": 80,  "w": 140, "h": 100, "color": "0x8a7150" },
+    { "id": "p_floorflag", "text": "Floor flag",     "x": 420, "y": 80,  "w": 140, "h": 100, "color": "0x5e5650" },
+    { "id": "p_shroud",    "text": "Body shroud",    "x": 580, "y": 80,  "w": 140, "h": 100, "color": "0xd9d2c4" }
+  ],
+  "correctMap": {
+    "p_spade":     "slot1",
+    "p_shroud":    "slot2",
+    "p_quicklime": "slot3",
+    "p_floorflag": "slot4"
+  },
+  "successCopy": "Spade found"
+}

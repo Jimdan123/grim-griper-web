@@ -45,22 +45,59 @@ export function createActionHandlers({
   evidenceItems,
   ghostReplays,
   hud,
+  puzzleHost,
 }) {
   const puzzleDoors = Array.isArray(stageData.puzzleDoors) ? stageData.puzzleDoors : [];
 
+  // Map evidenceUnlockedId → EvidenceItem so the puzzle-solve callback can
+  // flip visibility without iterating the array each time.
+  const evidenceById = new Map();
+  for (const ev of evidenceItems) evidenceById.set(ev.id, ev);
+
+  // `puzzleHost` is the integration point with main.js — it knows how to
+  // mount/unmount a PuzzleScene onto the HUD layer and exposes `isMounted()`
+  // so we can gate input suppression. Optional so tests / older callers that
+  // don't wire it still work.
+  const safePuzzleHost = puzzleHost && typeof puzzleHost.mount === 'function'
+    ? puzzleHost
+    : null;
+
   return {
-    update: () => {
+    update: (dtMs = 16) => {
+      // While a puzzle is mounted: suppress everything except the puzzle's
+      // own per-frame update + its ESC unmount handler. Player movement /
+      // SIGHT / COLLECT / TAB / haunts are all parked. Solving the puzzle
+      // (from inside PuzzleScene) calls back into the puzzleHost which
+      // unmounts and re-enables this branch.
+      if (safePuzzleHost && safePuzzleHost.isMounted()) {
+        // Drive the puzzle scene's own bounce/solve-defer timers.
+        safePuzzleHost.update(dtMs);
+        if (input.wasPressedThisFrame('PAUSE')) {
+          // ESC: graceful exit, pieces reset, no progress. Re-enterable.
+          safePuzzleHost.unmount({ reason: 'esc' });
+        }
+        // Keep the player frozen at their current x; setDisabled was already
+        // called at mount-time.
+        return;
+      }
+
       // INTERACT prompt — picks one of three contexts each frame:
       //   1. Outside chapel + at front door → "Press E to enter the chapel"
       //   2. Inside chapel + INVESTIGATION + at a puzzle door → that door's enterMessage
       //   3. Otherwise → hidden
+      // Solved doors no longer light up — the evidence is collectable in the
+      // chapel via Sight + E now.
       // The entryPrompt is one shared HUD pill; setMessage swaps the text +
       // re-fits the pill bg width so the label stays centered.
       const outsideAtDoor =
         sceneSwap.state === 'outside' && sceneSwap.isInProximity();
-      const puzzleDoorAtPlayer =
+      const rawPuzzleDoor =
         sceneSwap.state === 'inside' && stage.phase.is('INVESTIGATION')
           ? findPuzzleDoorInProximity(puzzleDoors, player.view.x)
+          : null;
+      const puzzleDoorAtPlayer =
+        rawPuzzleDoor && !gameState.puzzlesSolved.has(rawPuzzleDoor.id)
+          ? rawPuzzleDoor
           : null;
       const promptVisible = outsideAtDoor || puzzleDoorAtPlayer !== null;
       if (promptVisible) {
@@ -79,22 +116,49 @@ export function createActionHandlers({
         return; // consume E for this frame
       }
 
-      // INTERACT (puzzle door) — inside chapel + INVESTIGATION + at a door.
-      // Real puzzle UI is not built yet (slice TBD); for #23a-walled-rooms
-      // gate we log + show a feedback bubble so the wiring is visible.
+      // INTERACT (puzzle door) — inside chapel + INVESTIGATION + at an
+      // unsolved door. Mount the drag-to-slot PuzzleScene; on solve, flip
+      // the bound evidence to visible:true. Per #23 §"Wire to evidence
+      // reveal": the evidence still requires Sight + E to collect after
+      // the puzzle solve — that's handled by the existing COLLECT path.
       if (input.wasPressedThisFrame('INTERACT') && puzzleDoorAtPlayer) {
-        // eslint-disable-next-line no-console
-        console.log('[PuzzleDoor] entered', {
-          id: puzzleDoorAtPlayer.id,
-          kind: puzzleDoorAtPlayer.kind,
-          playerX: Math.round(player.view.x),
-        });
-        const screenPt = world.toGlobal({ x: player.view.x, y: player.view.y - 40 });
-        hud.collectionFeedback.show(
-          `Entered the ${puzzleDoorAtPlayer.kind}`,
-          screenPt.x,
-          screenPt.y,
-        );
+        if (safePuzzleHost) {
+          const door = puzzleDoorAtPlayer;
+          // eslint-disable-next-line no-console
+          console.log('[PuzzleDoor] mount', {
+            id: door.id,
+            kind: door.kind,
+            puzzleFile: door.puzzleFile,
+          });
+          // Freeze player + clear any in-flight SIGHT before the puzzle
+          // takes over the screen. SightFSM owns its own state but it
+          // reads input each tick, so we just hide the FX and re-enable
+          // on unmount.
+          if (typeof player.setDisabled === 'function') player.setDisabled(true);
+          safePuzzleHost.mount({
+            door,
+            onSolved: () => {
+              gameState.puzzlesSolved.add(door.id);
+              const ev = evidenceById.get(door.evidenceUnlockedId);
+              if (ev && typeof ev.setVisible === 'function') {
+                ev.setVisible(true);
+              }
+              // Feedback bubble at the door position (screen-space). The
+              // human reads this as the diegetic "ledger / spade revealed"
+              // beat — the actual evidence sprite is now visible in the
+              // chapel and collectable via Sight + E.
+              const screenPt = world.toGlobal({ x: door.x, y: player.view.y - 40 });
+              const copy = door.successCopy
+                || (door.evidenceUnlockedId === 'confessionLedger'
+                  ? 'Ledger found'
+                  : 'Spade found');
+              hud.collectionFeedback.show(copy, screenPt.x, screenPt.y);
+            },
+            onUnmount: () => {
+              if (typeof player.setDisabled === 'function') player.setDisabled(false);
+            },
+          });
+        }
         return; // consume E
       }
 

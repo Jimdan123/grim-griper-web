@@ -33,6 +33,7 @@ import { mountAmbientMotion } from './scene/ambientMounts.js';
 import { setupChapelBustle } from './scene/chapelBustle.js';
 import { createSceneSwap, resolveReaperSpawn } from './scene/sceneSwap.js';
 import { createActionHandlers } from './engine/actionHandlers.js';
+import { PuzzleScene } from './puzzles/PuzzleScene.js';
 
 (async () => {
   const app = await createApp();
@@ -171,6 +172,81 @@ import { createActionHandlers } from './engine/actionHandlers.js';
 
   wireEndRunController({ stage, gameState, endScreen: hud.endScreen });
 
+  // Puzzle host — owns the lifecycle of the drag-to-slot PuzzleScene per
+  // door (#23b). Lazy-loads the puzzle JSON on first mount, suppresses
+  // player movement while a puzzle is up, and fires onSolved → caller flips
+  // evidence visible. Mounted onto app.stage so it sits above world (the
+  // chapel still shows dimmed underneath).
+  const puzzleCache = new Map(); // url → parsed JSON
+  let _activePuzzle = null; // { scene, door, onUnmountCb }
+  let _puzzlePending = false; // guards against double-mount during async fetch
+  const puzzleHost = {
+    isMounted: () => _activePuzzle !== null || _puzzlePending,
+    mount: async ({ door, onSolved, onUnmount }) => {
+      if (_activePuzzle || _puzzlePending) return;
+      _puzzlePending = true;
+      const url = door.puzzleFile;
+      if (!url) {
+        // eslint-disable-next-line no-console
+        console.warn('[PuzzleHost] door has no puzzleFile; skipping mount', door);
+        _puzzlePending = false;
+        return;
+      }
+      let config = puzzleCache.get(url);
+      if (!config) {
+        try {
+          const res = await fetch(url);
+          if (!res.ok) throw new Error(`puzzle fetch ${res.status}`);
+          config = await res.json();
+          puzzleCache.set(url, config);
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.error('[PuzzleHost] failed to load puzzle', url, err);
+          _puzzlePending = false;
+          if (typeof onUnmount === 'function') onUnmount({ reason: 'load-failed' });
+          return;
+        }
+      }
+      // Guard against the unlikely case that ESC fired between fetch and now.
+      if (_activePuzzle) { _puzzlePending = false; return; }
+      const scene = new PuzzleScene({
+        config,
+        screenWidth: 1280,
+        screenHeight: 720,
+        onSolved: () => {
+          try { if (typeof onSolved === 'function') onSolved(); } catch (e) {
+            // eslint-disable-next-line no-console
+            console.error('[PuzzleHost] onSolved cb threw', e);
+          }
+          puzzleHost.unmount({ reason: 'solved' });
+        },
+      });
+      app.stage.addChild(scene.view);
+      _activePuzzle = { scene, door, onUnmountCb: onUnmount };
+      _puzzlePending = false;
+    },
+    unmount: ({ reason } = {}) => {
+      if (!_activePuzzle) return;
+      const { scene, onUnmountCb } = _activePuzzle;
+      _activePuzzle = null;
+      try { scene.destroy(); } catch (e) {
+        // eslint-disable-next-line no-console
+        console.error('[PuzzleHost] scene.destroy threw', e);
+      }
+      if (typeof onUnmountCb === 'function') {
+        try { onUnmountCb({ reason }); } catch (e) {
+          // eslint-disable-next-line no-console
+          console.error('[PuzzleHost] onUnmount cb threw', e);
+        }
+      }
+    },
+    update: (dtMs) => {
+      if (_activePuzzle && _activePuzzle.scene) {
+        _activePuzzle.scene.update(dtMs);
+      }
+    },
+  };
+
   const actionHandlers = createActionHandlers({
     input,
     player,
@@ -186,6 +262,7 @@ import { createActionHandlers } from './engine/actionHandlers.js';
     evidenceItems,
     ghostReplays,
     hud,
+    puzzleHost,
   });
 
   let _shownInsideTutorial = false;

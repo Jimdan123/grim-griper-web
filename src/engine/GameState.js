@@ -16,6 +16,12 @@ export class GameState {
     this.reaperTraits = { ...DEFAULT_REAPER_TRAITS, ...(overrides.reaperTraits || {}) };
     this.unlockedHaunts = new Set();
     this.collectedEvidence = new Set();
+    // Per-run record of which puzzle-doors the Pilgrim has already solved.
+    // Drives "don't re-mount the puzzle on re-entry" in actionHandlers and
+    // matches ticket #23 §"Wire to evidence reveal + Sight integration":
+    // "Puzzle state persists per-run in `gameState.puzzlesSolved`". Cleared
+    // implicitly on `new GameState()` at stage init / new run.
+    this.puzzlesSolved = new Set();
 
     // Phase 2 / Haunt state. Slice 3 owns these (see issue 03 §"What to build"):
     //   - fear:                       0..100 scalar, drives FearBar + SCORE trigger
