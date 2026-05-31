@@ -31,7 +31,7 @@
 //     conversion happens each frame on active bubbles.
 
 import { Container, Graphics, Text } from 'pixi.js';
-import { PIXEL_PALETTE } from '../art/pixelPalette.js';
+import { PIXEL_PALETTE } from '../art/pixelPalette/constants.js';
 
 // Tuning.
 const POOL_SIZE = 5;

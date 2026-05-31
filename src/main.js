@@ -38,10 +38,10 @@ import {
 import {
   createAldricPixelSprite,
   createReaperPixelSprite,
-  createPixelArtGhostPlaceholder,
   createParishionerSpritePixelArt,
-  createOutsideChapelScenePixelArt,
-} from './art/pixelPalette.js';
+} from './art/pixelPalette/sprites.js';
+import { createPixelArtGhostPlaceholder } from './art/pixelPalette/ghosts.js';
+import { createOutsideChapelScenePixelArt } from './art/pixelPalette/chapel.js';
 import { CandleFlame, DustMotes, SmokeWisp } from './art/ambientMotion.js';
 import {
   RENDER_MODE,

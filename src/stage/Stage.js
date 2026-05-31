@@ -13,11 +13,13 @@ import {
   createChapelFrontDoor,
   createChapelCeilingPixelArt,
   createChapelExteriorPixelArt,
-  createPixelArtConfessionRoomProps,
+} from '../art/pixelPalette/chapel.js';
+import {
   createChapelDayAmbientPixelArt,
   createPewPixelArt,
   createCandleShrinePixelArt,
-} from '../art/pixelPalette.js';
+} from '../art/pixelPalette/furniture.js';
+import { createPixelArtConfessionRoomProps } from '../art/pixelPalette/confessionRoomProps.js';
 import {
   RENDER_MODE,
   getRenderMode,
