@@ -190,6 +190,102 @@ export function createNaveRoomPixelArt({ tile = 16, bounds } = {}) {
     .fill(PIXEL_PALETTE.STONE_DARK);
   container.addChild(baseboard);
 
+  // -------- 5b. Internal walls — nave / booth / sacristy dividers --------
+  // Per 2026-05-30 evening design pivot (walled-rooms walk-through replaces
+  // ticket #23 zoom-in): the chapel reads as 3 distinct rooms separated by
+  // stone partition walls with arched door openings the Pilgrim walks through.
+  //
+  // Layout (logical px):
+  //   Nave        : x ≈ 80  – 640   (altar 220, lectern 500)
+  //   Booth       : x ≈ 640 – 920   (confessionBooth waypoint 780)
+  //   Sacristy    : x ≈ 920 – 1200  (sacristy waypoint 1060)
+  //
+  // Each wall is 80px thick × full back-wall height with a 48px-wide × 160px-
+  // tall arched doorway opening at its center. Jambs (16px solid stone on
+  // each side of the door) frame the opening so the wall reads as a doorway,
+  // not a wall with a hole. A 10px STONE_DARK lintel band caps the door, and
+  // a darker "void" tone fills the door opening so the next room reads as
+  // recessed space.
+  //
+  // No collision yet — Pilgrim walks through. Purely visual.
+  const internalWalls = new Graphics();
+  const WALL_THICKNESS = 80;
+  const DOOR_OPENING_W = 48;
+  const DOOR_OPENING_H = 160;
+  const wallTopY = y0;
+  const wallBotY = floorTopY;
+  const archTopY = wallBotY - DOOR_OPENING_H;
+  const wallCenters = [640, 920];
+  const jambW = (WALL_THICKNESS - DOOR_OPENING_W) / 2; // 16
+
+  // Tone choice rationale (revised after first prototype read as more pillars):
+  // - Wall body uses STONE_DARK (0x2a232f) — substantially darker than the
+  //   back wall's STONE_BASE block faces, so the partition reads as foreground
+  //   instead of blending with the masonry behind.
+  // - Door void uses STONE_MORTAR (0x1e1822) — the darkest tone in the palette
+  //   — reading as the shadowy recess into the next room.
+  // - Lintel is a contrasting STONE_LIGHT band so the doorway frame catches
+  //   the eye against the dark wall.
+  for (const wallCx of wallCenters) {
+    const wx = snap(wallCx - WALL_THICKNESS / 2, tile);
+    const openingX = snap(wallCx - DOOR_OPENING_W / 2, tile);
+    const openingR = openingX + DOOR_OPENING_W;
+    // 1) Solid wall above the arch (full thickness, cornice to lintel top).
+    internalWalls
+      .rect(wx, wallTopY, WALL_THICKNESS, archTopY - wallTopY)
+      .fill(PIXEL_PALETTE.STONE_DARK);
+    // 2) Left jamb — solid dark stone from lintel down to the floor.
+    internalWalls
+      .rect(wx, archTopY, jambW, wallBotY - archTopY)
+      .fill(PIXEL_PALETTE.STONE_DARK);
+    // 3) Right jamb.
+    internalWalls
+      .rect(openingR, archTopY, jambW, wallBotY - archTopY)
+      .fill(PIXEL_PALETTE.STONE_DARK);
+    // 4) Door void — darkest available tone so the opening reads as a recess
+    //    into another room, not as a hole exposing the chapel back wall.
+    internalWalls
+      .rect(openingX, archTopY + 16, DOOR_OPENING_W, DOOR_OPENING_H - 16)
+      .fill(PIXEL_PALETTE.STONE_MORTAR);
+    // 5) Arch lintel — 16px STONE_LIGHT band across the full wall thickness.
+    //    Contrasts against the dark wall and reads as a carved frame.
+    internalWalls
+      .rect(wx, archTopY, WALL_THICKNESS, 16)
+      .fill(PIXEL_PALETTE.STONE_LIGHT);
+    // 6) Lintel underside shadow — 2px STONE_MORTAR strip on the underside
+    //    of the lintel to ground it visually.
+    internalWalls
+      .rect(wx, archTopY + 16, WALL_THICKNESS, 2)
+      .fill(PIXEL_PALETTE.STONE_MORTAR);
+    // 7) Wall edge highlight + shadow.
+    internalWalls
+      .rect(wx, wallTopY, 1, archTopY - wallTopY)
+      .fill(PIXEL_PALETTE.STONE_LIGHT);
+    internalWalls
+      .rect(wx + WALL_THICKNESS - 1, wallTopY, 1, archTopY - wallTopY)
+      .fill(PIXEL_PALETTE.STONE_MORTAR);
+    // 8) Jamb inner edges — STONE_LIGHT highlight on the door-facing side
+    //    of each jamb (the candle-lit edge that catches the eye).
+    internalWalls
+      .rect(openingX - 2, archTopY + 18, 2, DOOR_OPENING_H - 18)
+      .fill(PIXEL_PALETTE.STONE_LIGHT);
+    internalWalls
+      .rect(openingR, archTopY + 18, 2, DOOR_OPENING_H - 18)
+      .fill(PIXEL_PALETTE.STONE_LIGHT);
+    // 9) Cornice cap — 6px STONE_BASE band at the top so the wall ties into
+    //    the ceiling/cornice band visually instead of looking decapitated.
+    internalWalls
+      .rect(wx, wallTopY, WALL_THICKNESS, 6)
+      .fill(PIXEL_PALETTE.STONE_BASE);
+    // 10) Floor threshold — 4px STONE_LIGHT bar at the base of the doorway
+    //     so the door reads as a stepped entry, not as the floor continuing
+    //     through.
+    internalWalls
+      .rect(openingX, wallBotY - 4, DOOR_OPENING_W, 4)
+      .fill(PIXEL_PALETTE.STONE_LIGHT);
+  }
+  container.addChild(internalWalls);
+
   // -------- 6. Dust motes in the window shaft --------
   // Eight single-pixel DAY_LIGHT specks scattered diagonally from the
   // window down-left toward the floor — suggests a sunbeam shaft without

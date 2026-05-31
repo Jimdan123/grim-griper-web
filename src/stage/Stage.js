@@ -1,7 +1,6 @@
 import { Container, Text } from 'pixi.js';
 import { StateMachine } from '../engine/StateMachine.js';
 import { createChapelBackground } from '../art/placeholders/chapel/background.js';
-import { createDoorArch } from '../art/placeholders/chapel/doorArch.js';
 import { createSacristyRoom } from '../art/placeholders/chapel/sacristyRoom.js';
 import { createWaypointMarker } from '../art/placeholders/evidence/waypoint.js';
 import { PALETTE, SCALE } from '../art/placeholders/constants.js';
@@ -10,7 +9,6 @@ import { createChapelFrontDoor } from '../art/pixelPalette/chapel/frontDoor.js';
 import { createChapelCeilingPixelArt } from '../art/pixelPalette/chapel/ceiling.js';
 import { createChapelDayAmbientPixelArt } from '../art/pixelPalette/chapelBustle/dayAmbient.js';
 import { createPewPixelArt } from '../art/pixelPalette/chapelBustle/pew.js';
-import { createCandleShrinePixelArt } from '../art/pixelPalette/chapelBustle/candleShrine.js';
 import { createPixelArtConfessionRoomProps } from '../art/pixelPalette/confessionRoomProps.js';
 import {
   RENDER_MODE,
@@ -97,21 +95,12 @@ export class Stage {
       }
     }
 
-    const doorLink = Array.isArray(data.links)
-      ? data.links.find((l) => l.type === 'door' && l.label === 'sacristy_door')
-      : null;
-    if (doorLink) {
-      const [tx, ty] = doorLink.tile;
-      void ty;
-      const doorLogicalX = tx * tile;
-      this.view.addChild(
-        createDoorArch({
-          tileLogicalX: doorLogicalX,
-          topY: bounds.y,
-          floorY: this.floorY,
-        }),
-      );
-    }
+    // Sacristy door arch removed 2026-05-30 evening — the walled-rooms pivot
+    // (`[[walled-rooms-pivot-2026-05-30]]`) gives the partition walls their
+    // own door openings inside `createNaveRoomPixelArt`, making the
+    // JSON-link-driven back-wall arch at x=1040 redundant. The Victim walker
+    // still consults `data.links` for multi-leg routing through the door
+    // tile; only the visual marker is dropped here.
 
     // Waypoint markers removed 2026-05-30 per the Happy Hills pivot — the
     // chapel must read as an actual chapel, not a labelled puzzle board. The
@@ -127,16 +116,20 @@ export class Stage {
     this.view.addChild(this._pixelPropsContainer);
     this._pixelPropsContainer.visible = getRenderMode() === RENDER_MODE.PIXELART;
 
-    // Three pews positioned between the altar (x=220), lectern (x=500), and
-    // booth (x=780) anchors so they don't fight the prop silhouettes. Two
-    // side shrines flank the chapel for the candlelighter NPC.
+    // 2026-05-30 evening (post walled-rooms pivot): the floor candle shrines
+    // dropped — the chapel ALREADY has wall-mounted lamps via the day-ambient
+    // layer above, so floor shrines were redundant. Two pews kneel under the
+    // 2nd and last sun shafts from `createChapelDayAmbientPixelArt`'s
+    // SHAFT_XS = [192, 384, 576, 720, 880, 1072]. x=384 sits cleanly in the
+    // nave between altar (220) and lectern (500), clear of pillars at 256 +
+    // 512. x=1072 sits in the sacristy between door 2 (920) and the right
+    // wall, near the sacristy waypoint (1060) without colliding with the
+    // sacristy prop. Previous placement at x=512 collided with the lectern;
+    // x=1180 was too close to the chapel right wall.
     this._pewsContainer = new Container();
     this._pewsContainer.label = 'pews-shrines-pixel';
-    for (const px of [360, 640, 920]) {
+    for (const px of [384, 1072]) {
       this._pewsContainer.addChild(createPewPixelArt({ x: px, floorY: this.floorY }));
-    }
-    for (const sx of [130, 660]) {
-      this._pewsContainer.addChild(createCandleShrinePixelArt({ x: sx, floorY: this.floorY }));
     }
     this.view.addChild(this._pewsContainer);
     this._pewsContainer.visible = getRenderMode() === RENDER_MODE.PIXELART;

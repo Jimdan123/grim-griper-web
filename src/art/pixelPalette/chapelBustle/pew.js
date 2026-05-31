@@ -27,9 +27,13 @@ export function createPewPixelArt({ x = 0, floorY = 0 } = {}) {
   const LEG_W = 6;
   const LEG_H = 8;
 
-  // Seat — horizontal plank at the top of the body.
+  // Seat — horizontal plank, sized so legs land on the floor (y=0). Earlier
+  // geometry used seatY = -PEW_H and put the legs from y=-18 to y=-10,
+  // leaving the pew floating 10 px above floorY. Now legs span y=-LEG_H to
+  // y=0 (sitting on floor), seat sits on top of legs, back sits on top of
+  // seat.
   const seat = new Graphics();
-  const seatY = -PEW_H;
+  const seatY = -(LEG_H + SEAT_H);
   seat.rect(-PEW_W / 2, seatY, PEW_W, SEAT_H).fill(PIXEL_PALETTE.WOOD_BASE);
   seat.rect(-PEW_W / 2, seatY, PEW_W, 1).fill(PIXEL_PALETTE.WOOD_LIGHT);
   seat.rect(-PEW_W / 2, seatY + SEAT_H - 1, PEW_W, 1).fill(PIXEL_PALETTE.WOOD_DARK);
