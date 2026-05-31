@@ -114,7 +114,13 @@ export const SCALE = {
   },
   // FLOOR_H kept for backward compat (baseboard trim thickness); FLOOR_STRIP_H is
   // the visible chapel floor band height (Path A composition).
-  FRAME: { TOP_H: 16, FLOOR_H: 8, FLOOR_STRIP_H: 100 },
+  // 2026-05-30 evening (walled-rooms VP audit fix #4): aligned 100 → 96 to match
+  // the pixel-art floor band height in chapel/nave.js + chapelBustle/dayAmbient.js
+  // (`FLOOR_BAND_H = 96`). Previously Stage.floorY used 100 while the pixel-art
+  // floor band drew at 96, causing pews/altar/lectern/booth/sacristy props to
+  // float 4 px above the pixel-art flagstone surface. Painterly mode (legacy
+  // A/B per PRD §19.7) just renders a 4 px thinner floor strip — still reads.
+  FRAME: { TOP_H: 16, FLOOR_H: 8, FLOOR_STRIP_H: 96 },
   PILLAR: { WIDTH: 22, CAP_H: 10, BASE_H: 10 },
   HORIZON_H: 3,
 };

@@ -94,12 +94,20 @@ export function createNaveRoomPixelArt({ tile = 16, bounds } = {}) {
   }
   container.addChild(blocks);
 
-  // -------- 2. Pillar accents at x=256/512/768/1024 --------
+  // -------- 2. Pillar accents in the nave only --------
   // Each pillar is a 16px-wide column of STONE_LIGHT (highlight column) with
   // a 16px-wide STONE_DARK shadow column 16px to its right, suggesting a
   // rounded pillar standing proud of the wall. Tile-snapped to the nearest
   // 16px boundary.
-  const PILLAR_XS = [256, 512, 768, 1024];
+  //
+  // 2026-05-30 evening (walled-rooms VP audit fix #2): pre-pivot list was
+  // [256, 512, 768, 1024] for an open chapel. The walled-rooms pivot put
+  // partition walls (themselves vertical stone elements that carry the
+  // rhythm in booth + sacristy) at x=640 and x=920. The x=768 pillar bled
+  // dark/light stripes 1-8 px past the booth posts at 752-808; the x=1024
+  // pillar stripped against the Christ icon at 1028-1092. Both removed —
+  // pillars now live in the nave only.
+  const PILLAR_XS = [256, 512];
   const pillars = new Graphics();
   for (const px of PILLAR_XS) {
     const cx = snap(px, tile);
@@ -283,6 +291,44 @@ export function createNaveRoomPixelArt({ tile = 16, bounds } = {}) {
     internalWalls
       .rect(openingX, wallBotY - 4, DOOR_OPENING_W, 4)
       .fill(PIXEL_PALETTE.STONE_LIGHT);
+    // 11) Gothic pointed-arch crest — 2 stepped courses cut into the wall
+    //     body above the lintel so the doorway reads as carved architecture
+    //     (matches the front door's gothic point grammar). 2026-05-30 evening
+    //     walled-rooms VP audit fix #3 (concern #7): flat lintel read as
+    //     "wall with hole"; pointed crest reads as "doorway".
+    const crestSteps = [
+      { inset: 12, h: 3 }, // narrow apex stone
+      { inset: 6,  h: 3 }, // wider lower course
+    ];
+    for (let i = 0; i < crestSteps.length; i++) {
+      const step = crestSteps[i];
+      const sx = openingX - (DOOR_OPENING_W - DOOR_OPENING_W) + step.inset; // (no-op; readability)
+      const cx = openingX + step.inset;
+      const cw = DOOR_OPENING_W - step.inset * 2;
+      const cy = archTopY - (crestSteps.length - i) * step.h;
+      void sx;
+      // Carve crest from the wall body — fill with STONE_BASE (lighter than
+      // wall body so the carved stones catch the eye against STONE_DARK).
+      internalWalls.rect(cx, cy, cw, step.h).fill(PIXEL_PALETTE.STONE_BASE);
+      // 1px STONE_LIGHT top highlight per course.
+      internalWalls.rect(cx, cy, cw, 1).fill(PIXEL_PALETTE.STONE_LIGHT);
+    }
+    // 12) Warm halo above the lintel — dim CANDLE_GLOW band reads as a
+    //     "lit threshold" lantern wash (palette analog to the front door's
+    //     warm-lantern halo). Low alpha so it stays atmospheric, not lurid.
+    const halo = new Graphics();
+    halo
+      .rect(wallCx - 9, archTopY + 4, 18, 6)
+      .fill(PIXEL_PALETTE.CANDLE_GLOW);
+    halo.alpha = 0.22;
+    internalWalls.addChild(halo);
+    // Tiny brighter core in the doorway mouth so the warmth reads at thumbnail.
+    const haloCore = new Graphics();
+    haloCore
+      .rect(wallCx - 5, archTopY + 18, 10, 4)
+      .fill(PIXEL_PALETTE.CANDLE_GLOW);
+    haloCore.alpha = 0.18;
+    internalWalls.addChild(haloCore);
   }
   container.addChild(internalWalls);
 

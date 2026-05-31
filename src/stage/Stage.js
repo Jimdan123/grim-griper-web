@@ -120,12 +120,17 @@ export class Stage {
     // dropped — the chapel ALREADY has wall-mounted lamps via the day-ambient
     // layer above, so floor shrines were redundant. Two pews kneel under the
     // 2nd and last sun shafts from `createChapelDayAmbientPixelArt`'s
-    // SHAFT_XS = [192, 384, 576, 720, 880, 1072]. x=384 sits cleanly in the
-    // nave between altar (220) and lectern (500), clear of pillars at 256 +
-    // 512. x=1072 sits in the sacristy between door 2 (920) and the right
-    // wall, near the sacristy waypoint (1060) without colliding with the
-    // sacristy prop. Previous placement at x=512 collided with the lectern;
-    // x=1180 was too close to the chapel right wall.
+    // SHAFT_XS = [192, 384, 576, 720, 880, 1072].
+    //   * x=384  — nave pew, between altar (220) and lectern (500), clear of
+    //              pillars at 256 + 512.
+    //   * x=1072 — sacristy bench (NOT a symmetric nave pew). Sits between
+    //              door 2 (920) and the right wall, near the sacristy waypoint
+    //              (1060) without colliding with the sacristy prop.
+    // Asymmetry is intentional: the walled-rooms pivot replaced one big nave
+    // with three distinct rooms (nave / booth / sacristy), so bilateral
+    // symmetry around chapel-center (640) is no longer the read — each room
+    // furnishes itself. The audit (Agent C walls VP, concern #5) flagged this
+    // and recommended option (a): keep + annotate.
     this._pewsContainer = new Container();
     this._pewsContainer.label = 'pews-shrines-pixel';
     for (const px of [384, 1072]) {

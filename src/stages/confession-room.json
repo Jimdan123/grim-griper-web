@@ -7,11 +7,13 @@
   "reaperSpawn": { "spawnX": 240, "doorInteractMinX": 900, "doorInteractMaxX": 996, "entryTargetX": 200, "entryWalkDurationMs": 1000 },
   "fearBucketThreshold": 50,
   "rooms": [
-    { "id": "nave",     "name": "Nave",     "x": 5,  "y": 12, "w": 60, "h": 27, "lit": true },
-    { "id": "sacristy", "name": "Sacristy", "x": 65, "y": 12, "w": 14, "h": 27, "lit": true }
+    { "id": "nave",     "name": "Nave",     "x": 5,  "y": 12, "w": 35, "h": 27, "lit": true },
+    { "id": "booth",    "name": "Booth",    "x": 40, "y": 12, "w": 18, "h": 27, "lit": true },
+    { "id": "sacristy", "name": "Sacristy", "x": 58, "y": 12, "w": 22, "h": 27, "lit": true }
   ],
   "links": [
-    { "type": "door", "from": "nave", "to": "sacristy", "tile": [65, 32], "open": true, "label": "sacristy_door" }
+    { "type": "door", "from": "nave",  "to": "booth",    "tile": [40, 32], "open": true, "label": "booth_door" },
+    { "type": "door", "from": "booth", "to": "sacristy", "tile": [58, 32], "open": true, "label": "sacristy_door" }
   ],
   "waypoints": [
     { "id": "altar",           "kind": "Altar",           "x": 220,  "label": "Altar" },
