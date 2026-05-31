@@ -7,12 +7,10 @@ import {
 } from '../art/placeholders/chapel.js';
 import { createWaypointMarker } from '../art/placeholders/evidence.js';
 import { PALETTE, SCALE } from '../art/placeholders/constants.js';
-import {
-  createNaveRoomPixelArt,
-  createChapelFrontDoor,
-  createChapelCeilingPixelArt,
-  createChapelExteriorPixelArt,
-} from '../art/pixelPalette/chapel.js';
+import { createNaveRoomPixelArt } from '../art/pixelPalette/chapel/nave.js';
+import { createChapelFrontDoor } from '../art/pixelPalette/chapel/frontDoor.js';
+import { createChapelCeilingPixelArt } from '../art/pixelPalette/chapel/ceiling.js';
+import { createChapelExteriorPixelArt } from '../art/pixelPalette/chapel/exterior.js';
 import {
   createChapelDayAmbientPixelArt,
   createPewPixelArt,

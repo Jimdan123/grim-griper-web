@@ -26,7 +26,7 @@ import {
   createReaperPixelSprite,
 } from './art/pixelPalette/sprites.js';
 import { createPixelArtGhostPlaceholder } from './art/pixelPalette/ghosts.js';
-import { createOutsideChapelScenePixelArt } from './art/pixelPalette/chapel.js';
+import { createOutsideChapelScenePixelArt } from './art/pixelPalette/outsideScene/composite.js';
 import {
   RENDER_MODE,
   getRenderMode,
