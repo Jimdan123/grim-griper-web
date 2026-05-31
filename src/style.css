@@ -9,6 +9,8 @@ html, body {
 
 #app, #app canvas {
   display: block;
+  margin: 0;
+  padding: 0;
   width: 100vw;
   height: 100dvh;
 }

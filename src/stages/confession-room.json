@@ -1,0 +1,84 @@
+{
+  "id": "confession-room",
+  "displayName": "The Confession Room",
+  "meta": { "tile": 16, "width": 80, "height": 45 },
+  "chapelBounds": { "x": 80, "y": 200, "width": 1120, "height": 420 },
+  "playerBounds": { "x": 0, "y": 200, "width": 1248, "height": 420 },
+  "reaperSpawn": { "spawnX": 240, "doorInteractMinX": 900, "doorInteractMaxX": 996, "entryTargetX": 200, "entryWalkDurationMs": 1000 },
+  "fearBucketThreshold": 50,
+  "rooms": [
+    { "id": "nave",     "name": "Nave",     "x": 5,  "y": 12, "w": 60, "h": 27, "lit": true },
+    { "id": "sacristy", "name": "Sacristy", "x": 65, "y": 12, "w": 14, "h": 27, "lit": true }
+  ],
+  "links": [
+    { "type": "door", "from": "nave", "to": "sacristy", "tile": [65, 32], "open": true, "label": "sacristy_door" }
+  ],
+  "waypoints": [
+    { "id": "altar",           "kind": "Altar",           "x": 220,  "label": "Altar" },
+    { "id": "lectern",         "kind": "Lectern",         "x": 500,  "label": "Lectern" },
+    { "id": "confessionBooth", "kind": "ConfessionBooth", "x": 780,  "label": "Confession Booth" },
+    { "id": "sacristy",        "kind": "Sacristy",        "x": 1060, "label": "Sacristy" }
+  ],
+  "evidence": [
+    {
+      "id": "chalice",
+      "hauntId": "SHATTER",
+      "x": 220,
+      "y": 476,
+      "visible": true,
+      "ghostX": 200,
+      "ghostY": 520,
+      "hauntSourceWaypointId": "altar"
+    },
+    {
+      "id": "sermonBook",
+      "hauntId": "WHISPER",
+      "x": 500,
+      "y": 472,
+      "visible": true,
+      "ghostX": 500,
+      "ghostY": 520,
+      "hauntSourceWaypointId": "lectern"
+    },
+    {
+      "id": "confessionLedger",
+      "hauntId": "VOICE",
+      "x": 780,
+      "y": 510,
+      "visible": false,
+      "ghostX": 780,
+      "ghostY": 520,
+      "hauntSourceWaypointId": "confessionBooth"
+    },
+    {
+      "id": "limeSpade",
+      "hauntId": "RISE",
+      "x": 1180,
+      "y": 540,
+      "visible": false,
+      "ghostX": 1180,
+      "ghostY": 520,
+      "hauntSourceWaypointId": "sacristy"
+    }
+  ],
+  "haunts": {
+    "SHATTER": { "correctWaypointId": "altar",           "lowFearTendency": "PRAYING",    "highFearTendency": "FLEEING" },
+    "VOICE":   { "correctWaypointId": "confessionBooth", "lowFearTendency": "PRAYING",    "highFearTendency": "HIDING"  },
+    "WHISPER": { "correctWaypointId": "lectern",         "lowFearTendency": "AGGRESSIVE", "highFearTendency": "HIDING"  },
+    "RISE":    { "correctWaypointId": "sacristy",        "lowFearTendency": "AGGRESSIVE", "highFearTendency": "FLEEING" }
+  },
+  "victim": {
+    "displayName": "Father Aldric",
+    "crimeBlurb": "Lured the sick. Poisoned the chalice. Buried them in quicklime.",
+    "routine": ["altar", "lectern", "confessionBooth", "sacristy"],
+    "dwellMs": 3000,
+    "walkMs": 2000,
+    "personality": {
+      "bias": {
+        "wrongWaypointReactsAs": "RITUAL",
+        "probability": 0.6
+      }
+    }
+  },
+  "doors": { "x": 1180 }
+}
