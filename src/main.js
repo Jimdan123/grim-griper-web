@@ -2,17 +2,7 @@ import { Application, Container } from 'pixi.js';
 import { GameLoop } from './engine/GameLoop.js';
 import { InputManager } from './engine/InputManager.js';
 import { GameState } from './engine/GameState.js';
-import { FpsOverlay } from './ui/FpsOverlay.js';
-import { SightMeter } from './ui/SightMeter.js';
-import { CollectionFeedback } from './ui/CollectionFeedback.js';
-import { EntryPrompt } from './ui/EntryPrompt.js';
-import { TutorialPrompt } from './ui/TutorialPrompt.js';
-import { SceneFadeOverlay } from './ui/SceneFadeOverlay.js';
-import { EvidenceCounter } from './ui/EvidenceCounter.js';
-import { StageTitleCard } from './ui/StageTitleCard.js';
-import { RadialHauntMenu } from './ui/RadialHauntMenu.js';
-import { FearBar } from './ui/FearBar.js';
-import { EndScreen } from './ui/EndScreen.js';
+import { setupHud } from './ui/setupHud.js';
 import { loadStage } from './stage/StageLoader.js';
 import { Stage } from './stage/Stage.js';
 import { Player } from './entities/Player.js';
@@ -25,14 +15,12 @@ import { SightFSM } from './sight/SightFSM.js';
 import { applyFearGain, computeHauntFearDelta } from './math/fearMath.js';
 import { scoreRun } from './scoring/scoreRun.js';
 import {
-  createAldricPortraitCard,
   createAldricWalkingSprite,
   createFatedDeathPose,
 } from './art/placeholders/aldric.js';
 import {
   createConfessionRoomForeground,
   createStainedWindowSilhouette,
-  createVignette,
 } from './art/placeholders/decor.js';
 import {
   createConfessionRoomProps,
@@ -519,117 +507,15 @@ const LOGICAL_HEIGHT = 720;
 
   // Screen-space UI — attached to app.stage, NOT world, so the ColorMatrixFilter
   // on world doesn't desaturate the HUD.
-  const fps = new FpsOverlay(app.ticker);
-  app.stage.addChild(fps.view);
-
-  const sightMeter = new SightMeter();
-  app.stage.addChild(sightMeter.view);
-  sightMeter.setSightBudget(sightBudget.getMs(), sightBudget.capacityMs);
-  // Hidden at boot — gate loop below shows on scene === 'inside'.
-  sightMeter.view.visible = false;
-
-  // Left-edge HUD column (FpsOverlay → EvidenceCounter → portrait). SightMeter
-  // pins itself to top-right (see src/ui/SightMeter.js) so it's not in this
-  // column despite the dispatch wording. Intent is preserved: a stacked HUD
-  // column on the left edge.
-  const evidenceCounter = new EvidenceCounter();
-  app.stage.addChild(evidenceCounter.view);
-  evidenceCounter.view.visible = false;
-
-  // Aldric portrait card — Stage + Art Lead deliverable. Mounted under the
-  // EvidenceCounter with ~12px vertical gap so the column reads as one block.
-  const portraitCard = createAldricPortraitCard();
-  portraitCard.x = 12;
-  portraitCard.y = evidenceCounter.bottomY + 12;
-  portraitCard.visible = false;
-  app.stage.addChild(portraitCard);
-
-  // Stage title + victim caption (issue #20). Mounted BEFORE vignette so the
-  // edge-darken sits on top of the text — intentional, the vignette is the
-  // outermost screen frame.
-  const stageTitleCard = new StageTitleCard({ stageData, ticker: app.ticker });
-  stageTitleCard.view.visible = false;
-  app.stage.addChild(stageTitleCard.view);
-
-  // Screen-space vignette — Happy Hills edge-darken. Mounted on app.stage
-  // (NOT world) so it sits above everything including HUD.
-  // FLAG: factory draws at logical 1280x720, but app.stage is NOT scaled
-  // (only world is). On viewports larger than 1280x720 the vignette will not
-  // cover the full screen. Scene Director follow-up: add a resize(w,h) method
-  // to createVignette, or render vignette into world after all other world
-  // children (and lift it above ColorMatrixFilter scope) — TODO.
-  const vignette = createVignette();
-  app.stage.addChild(vignette);
-  const applyVignetteResize = () => vignette.resize(window.innerWidth, window.innerHeight);
-  applyVignetteResize();
-  window.addEventListener('resize', applyVignetteResize);
-
-  // Floating-text feedback on COLLECT (issue #18). Mounted after vignette is
-  // fine — feedback is short-lived screen text and the vignette edges aren't
-  // where the player stands, so the corner-darken won't eat the labels.
-  const collectionFeedback = new CollectionFeedback();
-  app.stage.addChild(collectionFeedback.view);
-
-  // EntryPrompt (Foundation Engineer, 2026-05-30) — bottom-center HUD pill
-  // that reads "Press E to enter the chapel" while the Reaper stands in the
-  // door-proximity window AND has not yet entered. Mounted on app.stage so
-  // SightFX desaturation doesn't touch it. Pinned to viewport on boot +
-  // resize alongside the vignette.
-  const entryPrompt = new EntryPrompt('Press E to enter the chapel');
-  app.stage.addChild(entryPrompt.view);
-  const placeEntryPrompt = () => entryPrompt.setScreenPosition(window.innerWidth, window.innerHeight);
-  placeEntryPrompt();
-  window.addEventListener('resize', placeEntryPrompt);
-
-  // Tutorial prompt — fades in/out with multi-line instructional text.
-  // Shows movement controls on boot, then "Reaper Sight + collect"
-  // hint when the player first enters the chapel.
-  const tutorialPrompt = new TutorialPrompt();
-  app.stage.addChild(tutorialPrompt.view);
-  const placeTutorialPrompt = () => tutorialPrompt.setScreenPosition(window.innerWidth);
-  placeTutorialPrompt();
-  window.addEventListener('resize', placeTutorialPrompt);
-  // Show outside-scene tutorial on boot; auto-hides after 7s.
-  tutorialPrompt.show({
-    message: 'A / D or  ← →   Walk toward the chapel\n\nE   Interact (at the door)',
-    holdMs: 7000,
-  });
-  // When the scene flips to inside for the first time, show the inside hint.
+  const hud = setupHud({ app, ticker: app.ticker, stageData, sightBudget, gameState });
+  const {
+    sightMeter, evidenceCounter, portraitCard, stageTitleCard,
+    collectionFeedback, entryPrompt, tutorialPrompt,
+    fearBar, radialHauntMenu, endScreen,
+  } = hud;
+  sceneFadeOverlay = hud.sceneFadeOverlay;
+  // First-time inside tutorial flag.
   let _shownInsideTutorial = false;
-
-  // Phase-2 HUD (slice 3, #4 UI/HUD).
-  //   - FearBar: top-center, visible only in HAUNT.
-  //   - RadialHauntMenu: orbits the Reaper, visible only in HAUNT.
-  //   - EndScreen: full-screen overlay on FEAR=100 → SCORE.
-  // Mount order: FearBar / Radial first so EndScreen sits ABOVE them in
-  // z-order when shown (last-added wins on a Container).
-  const fearBar = new FearBar();
-  app.stage.addChild(fearBar.view);
-  fearBar.view.visible = false;
-
-  const radialHauntMenu = new RadialHauntMenu({ unlockedHaunts: gameState.unlockedHaunts });
-  app.stage.addChild(radialHauntMenu.view);
-  radialHauntMenu.view.visible = false;
-
-  const endScreen = new EndScreen();
-  app.stage.addChild(endScreen.view);
-  endScreen.setOnRetry(() => location.reload());
-  endScreen.setOnReturn(() => {
-    // eslint-disable-next-line no-console
-    console.log('[EndScreen] RETURN TO MENU — slice 5 wires this');
-  });
-
-  // SceneFadeOverlay (Foundation Engineer, 2026-05-30) — full-screen black
-  // rect at the TOP of app.stage z-order so it masks the outside↔inside
-  // container swap. Mounted last on app.stage so it sits above HUD +
-  // vignette + EndScreen. Driven by the GameLoop; fires onBlackPeak +
-  // onComplete callbacks back into sceneSwap.
-  sceneFadeOverlay = new SceneFadeOverlay();
-  app.stage.addChild(sceneFadeOverlay.view);
-  const applySceneFadeResize = () =>
-    sceneFadeOverlay.resize(window.innerWidth, window.innerHeight);
-  applySceneFadeResize();
-  window.addEventListener('resize', applySceneFadeResize);
 
   // Wire the SCORE-enter callback: when Stage flips HAUNT→SCORE and the
   // Victim's Fated Death fade completes, run scoreRun on the event log and
