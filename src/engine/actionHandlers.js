@@ -6,6 +6,16 @@
 
 import { computeHauntFearDelta } from '../math/fearMath.js';
 
+function findPuzzleDoorInProximity(puzzleDoors, waypointById, playerX) {
+  for (const door of puzzleDoors) {
+    const wp = waypointById.get(door.waypointId);
+    if (!wp || !Number.isFinite(wp.x)) continue;
+    const prox = Number.isFinite(door.proximityPx) ? door.proximityPx : 60;
+    if (Math.abs(playerX - wp.x) <= prox) return door;
+  }
+  return null;
+}
+
 const HAUNT_COOLDOWN_MS = 15_000;
 const FEAR_MAX = 100;
 // Only SHATTER is wired this slice; the others remain mapped so slice 4
@@ -33,9 +43,30 @@ export function createActionHandlers({
   evidenceItems,
   ghostReplays,
   hud,
+  cameraController,
 }) {
+  const puzzleDoors = Array.isArray(stageData.puzzleDoors) ? stageData.puzzleDoors : [];
+  const waypointById = new Map(
+    (stageData.waypoints || []).map((w) => [w.id, w]),
+  );
+
   return {
     update: () => {
+      // PAUSE while zoomed → zoomOut (ESC graceful exit per ticket #23 design).
+      // While zoomed all other action wiring is suppressed — the puzzle UI
+      // owns input (slice 23b lands the puzzle surface; for 23a infra-only,
+      // zoom in/out is the entire interaction).
+      if (cameraController?.isZoomed()) {
+        if (input.wasPressedThisFrame('PAUSE')) {
+          cameraController.zoomOut();
+        }
+        // Still drive the per-frame HUD readouts at the bottom of this fn —
+        // fall through past the gated handlers.
+        hud.sightMeter.setSightBudget(sightBudget.getMs(), sightBudget.capacityMs);
+        hud.evidenceCounter.setCount(gameState.collectedEvidence.size, 4);
+        return;
+      }
+
       // INTERACT (door entry) — must run BEFORE COLLECT so a press at the
       // door triggers entry instead of a no-op collect.
       const showPrompt =
@@ -46,6 +77,21 @@ export function createActionHandlers({
       if (input.wasPressedThisFrame('INTERACT') && sceneSwap.canConsumeInteract()) {
         sceneSwap.beginEnter();
         return; // consume E for this frame
+      }
+
+      // INTERACT (puzzle door zoom-in) — Day phase only, inside chapel only.
+      // Suppressed during HAUNT per ticket #23 ("zoom is a Day-phase beat").
+      if (
+        cameraController &&
+        sceneSwap.state === 'inside' &&
+        stage.phase.is('INVESTIGATION') &&
+        input.wasPressedThisFrame('INTERACT')
+      ) {
+        const door = findPuzzleDoorInProximity(puzzleDoors, waypointById, player.view.x);
+        if (door) {
+          cameraController.zoomTo(door.zoomBounds, { id: door.id });
+          return; // consume E for this frame
+        }
       }
 
       // COLLECT — only meaningful while sight is on (PRD §5/§9).
