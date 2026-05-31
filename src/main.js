@@ -35,6 +35,13 @@ import {
   CONFESSION_ROOM_CANDLES,
   STAINED_WINDOW_SHAFT,
 } from './art/placeholders.js';
+import {
+  createAldricPixelSprite,
+  createReaperPixelSprite,
+  createPixelArtGhostPlaceholder,
+  createParishionerSpritePixelArt,
+  createOutsideChapelScenePixelArt,
+} from './art/pixelPalette.js';
 import { CandleFlame, DustMotes, SmokeWisp } from './art/ambientMotion.js';
 import {
   RENDER_MODE,
@@ -42,30 +49,8 @@ import {
   attachDebugKeys,
   logBootMode,
 } from './render/TileRenderer.js';
-import {
-  setNaveRoomPixelArtFactory,
-  setChapelFrontDoorFactory,
-  setChapelCeilingPixelArtFactory,
-  setChapelExteriorPixelArtFactory,
-  setPixelArtConfessionRoomPropsFactory,
-  setChapelDayAmbientPixelArtFactory,
-  setPewPixelArtFactory,
-  setCandleShrinePixelArtFactory,
-} from './stage/Stage.js';
-// Chapel-bustle dispatch (Stage + Art Lead, 2026-05-30 evening) — ambient
-// parishioner NPCs + chatter bubbles for the daytime working-church register.
 import { AmbientNPC } from './entities/AmbientNPC.js';
 import { ChatterScheduler } from './ui/ChatterSystem.js';
-
-// Cross-team contract with #5 Stage + Art Lead (2026-05-30):
-//   path:    src/art/pixelPalette.js
-//   exports: createNaveRoomPixelArt, createAldricPixelSprite,
-//            createReaperPixelSprite, PIXEL_PALETTE
-//
-// #5's module is authored in parallel with this dispatch. To avoid a hard
-// bundler failure if it hasn't landed yet (or if #5 splits files / renames),
-// we resolve it via dynamic import inside the async IIFE below with a
-// tolerant fallback to the painterly factories.
 
 // Slice 3 — phase 2 fear/haunt constants used by action-handlers.
 const HAUNT_COOLDOWN_MS = 15_000;
@@ -148,100 +133,19 @@ const LOGICAL_HEIGHT = 720;
 
   const gameState = new GameState();
 
-  // Resolve #5's pixel-art module. Tolerant: if the file doesn't exist or any
-  // expected export is missing, fall back to painterly for the affected piece
-  // and log. The `M` debug key still works on whichever pieces ARE present.
-  let pixelArt = null;
-  try {
-    pixelArt = await import('./art/pixelPalette.js');
-  } catch (e) {
-    // eslint-disable-next-line no-console
-    console.warn(
-      '[main] pixelPalette.js not loadable yet — falling back to painterly ' +
-      "for nave + character sprites. (This is expected while #5's module is " +
-      'in flight.)',
-      e?.message,
-    );
-  }
-  const createNaveRoomPixelArt = pixelArt?.createNaveRoomPixelArt ?? null;
-  const createAldricPixelSprite = pixelArt?.createAldricPixelSprite ?? null;
-  const createReaperPixelSprite = pixelArt?.createReaperPixelSprite ?? null;
-  const createChapelFrontDoor = pixelArt?.createChapelFrontDoor ?? null;
-  // Stage + Art Lead (2026-05-30 evening) — new pixel-art deliverables that
-  // resolve the user's play-test feedback: black void above chapel, missing
-  // exterior path, painterly/pixel register clash on interior props.
-  const createChapelCeilingPixelArt =
-    pixelArt?.createChapelCeilingPixelArt ?? null;
-  const createChapelExteriorPixelArt =
-    pixelArt?.createChapelExteriorPixelArt ?? null;
-  const createPixelArtConfessionRoomProps =
-    pixelArt?.createPixelArtConfessionRoomProps ?? null;
-  const createPixelArtGhostPlaceholder =
-    pixelArt?.createPixelArtGhostPlaceholder ?? null;
-  // Chapel-bustle dispatch (Stage + Art Lead, 2026-05-30 evening) — warm
-  // day-ambient overlay + pews + side candle shrines + parishioner sprites.
-  // Optional: any missing factory degrades to "not rendered" / "no NPC of
-  // that variant" without breaking the boot.
-  const createChapelDayAmbientPixelArt =
-    pixelArt?.createChapelDayAmbientPixelArt ?? null;
-  const createPewPixelArt = pixelArt?.createPewPixelArt ?? null;
-  const createCandleShrinePixelArt =
-    pixelArt?.createCandleShrinePixelArt ?? null;
-  const createParishionerSpritePixelArt =
-    pixelArt?.createParishionerSpritePixelArt ?? null;
-  // Outside-chapel scene factory (Stage + Art Lead, 2026-05-30 — outside-
-  // chapel dispatch). Returns a Container that fills logical 0,0 → 1280,720
-  // with the outside-of-chapel pixel-art scene (path, façade, sky, etc.) so
-  // the Reaper can spawn outside and walk to the chapel door. Tolerant: if
-  // #5 hasn't landed the factory yet we fall back to a flat backdrop placed
-  // by the foundation side so the boot still succeeds.
-  const createOutsideChapelScenePixelArt =
-    pixelArt?.createOutsideChapelScenePixelArt ?? null;
-
-  // Inject the nave factory into Stage BEFORE constructing it — Stage reads
-  // this once at construction and rebuilds the pixel-art nave container.
-  setNaveRoomPixelArtFactory(createNaveRoomPixelArt);
-  // Chapel front door — Stage + Art Lead, 2026-05-30. The entry scene below
-  // walks the Reaper IN through this opening. Optional: if the factory isn't
-  // present, Stage just doesn't render a front door (left edge stays a flat
-  // back-wall mass).
-  setChapelFrontDoorFactory(createChapelFrontDoor);
-  // Pixel-art ceiling + exterior + interior props. Optional: any missing
-  // factory degrades to "not rendered" in pixelart mode; painterly mode is
-  // unaffected.
-  setChapelCeilingPixelArtFactory(createChapelCeilingPixelArt);
-  setChapelExteriorPixelArtFactory(createChapelExteriorPixelArt);
-  setPixelArtConfessionRoomPropsFactory(createPixelArtConfessionRoomProps);
-  // Chapel-bustle injections.
-  setChapelDayAmbientPixelArtFactory(createChapelDayAmbientPixelArt);
-  setPewPixelArtFactory(createPewPixelArt);
-  setCandleShrinePixelArtFactory(createCandleShrinePixelArt);
-
   const stageData = await loadStage('/src/stages/confession-room.json');
   const stage = new Stage(stageData, gameState);
   worldInsideContainer.addChild(stage.view);
 
-  // Outside-chapel scene mount (Foundation Engineer, 2026-05-30 — outside-
-  // chapel dispatch). #5's createOutsideChapelScenePixelArt returns a
-  // Container drawn in logical world coords (0,0 → 1280,720) so it composes
-  // 1:1 under the same contain-mode scale as the inside scene. If the
-  // factory isn't injected yet (parallel dispatch), we leave the outside
-  // container empty — the scene-swap still works; it just paints black
-  // until #5's factory lands.
-  if (createOutsideChapelScenePixelArt) {
-    const outsideScene = createOutsideChapelScenePixelArt({
+  // Outside-chapel scene — Container drawn in logical world coords (0,0 →
+  // 1280,720) so it composes 1:1 under the same contain-mode scale as the
+  // inside scene.
+  worldOutsideContainer.addChild(
+    createOutsideChapelScenePixelArt({
       bounds: stageData.chapelBounds,
       floorY: stage.floorY,
-    });
-    worldOutsideContainer.addChild(outsideScene);
-  } else {
-    // eslint-disable-next-line no-console
-    console.warn(
-      '[main] createOutsideChapelScenePixelArt not present in pixelPalette.js ' +
-      "yet — outside-scene container will be empty until #5's dispatch lands. " +
-      'Scene-swap still wires; press E at the chapel door to test the fade.',
-    );
-  }
+    }),
+  );
 
   // Composition layer — Happy Hills touchstone. Background-to-midground
   // decorative props sit ABOVE the chapel background (pillars baked into
@@ -266,21 +170,10 @@ const LOGICAL_HEIGHT = 720;
     worldInsideContainer.addChild(stainedWindow);
   }
 
-  // Storytelling props (ticket #21). Mount AFTER the stained window so the
-  // brick-niche sits inside the same back-wall band but BEFORE evidence /
-  // ghosts / player so it stays in the midground. Authored in world-logical
-  // coords; container is at (0,0).
-  //
-  // Stage + Art Lead (2026-05-30 evening): SKIPPED when render mode is
-  // PIXELART and the pixel-art equivalents are available — Stage.js mounts
-  // createPixelArtConfessionRoomProps in pixelart mode instead, so we avoid
-  // double-stacking painterly props on top of pixel-art walls (the user's
-  // play-test bug). Painterly mode (M-key A/B toggle starts painterly) keeps
-  // the painterly props for comparison.
-  const usingPixelArtProps =
-    getRenderMode() === RENDER_MODE.PIXELART
-    && typeof createPixelArtConfessionRoomProps === 'function';
-  if (!usingPixelArtProps) {
+  // Storytelling props — painterly composition. In PIXELART mode Stage.js
+  // mounts the pixel-art equivalents instead, so skip here to avoid double-
+  // stacking painterly props on top of pixel-art walls.
+  if (!usingPixelArtChapel) {
     const props = createConfessionRoomProps();
     worldInsideContainer.addChild(props);
   }
@@ -332,17 +225,11 @@ const LOGICAL_HEIGHT = 720;
   ambientUpdates.push(smoke);
 
   // Build GhostReplay first, then EvidenceItem — z-order: ghosts under
-  // evidence so the gold outline reads on top (design doc §4).
-  //
-  // Stage + Art Lead (2026-05-30 evening): ghosts are render-mode-aware.
-  // In pixelart mode, GhostReplay accepts a viewFactory that returns the
-  // two-figure crime-act compositions (Aldric + pilgrim). In painterly mode
-  // it falls back to the existing single-witness placeholders. Same alpha
-  // discipline (0.4 GHOST_PALE) is enforced by GhostReplay itself.
+  // evidence so the gold outline reads on top. In pixelart mode GhostReplay
+  // gets the two-figure crime-act composition factory; painterly mode falls
+  // back to the single-witness placeholder built into GhostReplay.
   const ghostViewFactory =
-    getRenderMode() === RENDER_MODE.PIXELART && createPixelArtGhostPlaceholder
-      ? createPixelArtGhostPlaceholder
-      : null;
+    getRenderMode() === RENDER_MODE.PIXELART ? createPixelArtGhostPlaceholder : null;
   const evidenceItems = [];
   const ghostReplays = [];
   for (const eData of stageData.evidence) {
@@ -361,16 +248,11 @@ const LOGICAL_HEIGHT = 720;
   // door arch into the back room. Falls back to chapelBounds for any stage
   // data that doesn't carry playerBounds yet.
   const walkBounds = stageData.playerBounds ?? stageData.chapelBounds;
-  // Render-mode-aware Reaper sprite (Foundation Engineer, 2026-05-30).
-  // Pixelart mode prefers #5's createReaperPixelSprite; painterly mode falls
-  // through to Player's internal createReaperPlaceholder. Construction-time
-  // only — runtime `M` toggle does NOT swap character sprites this dispatch
-  // (the toggle logs a "reload required" hint). Player optionally accepts a
-  // viewFactory; if absent, Player uses its built-in painterly factory.
+  // Render-mode-aware Reaper sprite. Construction-time only — runtime M
+  // toggle does NOT swap character sprites; reload required. Player falls
+  // back to its built-in painterly factory if viewFactory is null.
   const reaperViewFactory =
-    getRenderMode() === RENDER_MODE.PIXELART && createReaperPixelSprite
-      ? createReaperPixelSprite
-      : null;
+    getRenderMode() === RENDER_MODE.PIXELART ? createReaperPixelSprite : null;
   // Entry mechanic (Foundation Engineer, 2026-05-30) — REPLACES the prior
   // auto-walkin scene. Reaper-as-mortal-hooded-pilgrim spawns OUTSIDE the
   // chapel on the exterior path (logical x≈20, well to the left of the
@@ -507,12 +389,10 @@ const LOGICAL_HEIGHT = 720;
   //     view at FEAR=100 without importing the art module itself.
   //   - onFatedDeathComplete: bubbles up through Stage to fire EndScreen
   //     (see stage.onScoreEnter below).
-  // Render-mode-aware Aldric sprite (Foundation Engineer, 2026-05-30).
-  // Pixelart mode uses #5's createAldricPixelSprite; painterly mode uses the
-  // existing createAldricWalkingSprite. Construction-time only — `M` at
-  // runtime won't swap this; reload required.
+  // Render-mode-aware Aldric sprite. Construction-time only; reload required
+  // to swap registers.
   const aldricView =
-    getRenderMode() === RENDER_MODE.PIXELART && createAldricPixelSprite
+    getRenderMode() === RENDER_MODE.PIXELART
       ? createAldricPixelSprite()
       : createAldricWalkingSprite();
   const victim = new Victim({
@@ -554,7 +434,7 @@ const LOGICAL_HEIGHT = 720;
   // chapel is the legacy A/B comparison register; bustle is part of the new
   // pixel-art day register). If the factory isn't injected, we skip silently.
   const ambientNpcs = [];
-  if (usingPixelArtChapel && createParishionerSpritePixelArt) {
+  if (usingPixelArtChapel) {
     // 5 NPCs total — within the 4-6 envelope. Positions chosen to sit
     // naturally relative to the existing chapel furniture:
     //   - 2 kneelers in front of pews (between altar/lectern/booth anchors)
