@@ -3,7 +3,9 @@
 // the snuffed altar candle. Caller registers the returned `updates`
 // array into the GameLoop.
 
-import { CandleFlame, DustMotes, SmokeWisp } from '../art/ambientMotion.js';
+import { CandleFlame } from '../art/motion/candleFlame.js';
+import { DustMotes } from '../art/motion/dustMotes.js';
+import { SmokeWisp } from '../art/motion/smokeWisp.js';
 import {
   CONFESSION_ROOM_CANDLES,
   STAINED_WINDOW_SHAFT,
