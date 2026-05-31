@@ -2,7 +2,7 @@
 // Split from src/art/placeholders.js per refactor issue #1 Phase 2b.
 
 import { Container, Graphics } from 'pixi.js';
-import { PALETTE, SCALE } from './constants.js';
+import { PALETTE, SCALE, CANVAS } from './constants.js';
 
 export function createConfessionRoomForeground() {
   const container = new Container();
