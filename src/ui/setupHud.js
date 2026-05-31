@@ -18,7 +18,7 @@ import { StageTitleCard } from './StageTitleCard.js';
 import { RadialHauntMenu } from './RadialHauntMenu.js';
 import { FearBar } from './FearBar.js';
 import { EndScreen } from './EndScreen.js';
-import { createAldricPortraitCard } from '../art/placeholders/aldric.js';
+import { createAldricPortraitCard } from '../art/placeholders/aldric/portraitCard.js';
 import { createVignette } from '../art/placeholders/decor.js';
 
 export function setupHud({ app, ticker, stageData, sightBudget, gameState }) {

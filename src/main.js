@@ -12,10 +12,8 @@ import { SightBudget } from './sight/SightBudget.js';
 import { SightFX } from './sight/SightFX.js';
 import { SightFSM } from './sight/SightFSM.js';
 import { wireEndRunController } from './scoring/endRunController.js';
-import {
-  createAldricWalkingSprite,
-  createFatedDeathPose,
-} from './art/placeholders/aldric.js';
+import { createAldricWalkingSprite } from './art/placeholders/aldric/walkingSprite.js';
+import { createFatedDeathPose } from './art/placeholders/aldric/fatedDeathPose.js';
 import {
   createConfessionRoomForeground,
   createStainedWindowSilhouette,
