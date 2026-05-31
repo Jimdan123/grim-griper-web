@@ -1,252 +1,450 @@
 // VictimFSM.test.js
-// Spec for `VictimFSM`. Constructed with a seeded RNG + personality config
-// (sourced from confession-room.json). Public surface: `applyHaunt(haunt,
-// waypoint) → { stateAfter, fearDelta, sideEffects }` and `tick(dtMs)`.
-//
-// Module landing slice: 4. Until impl lands, every test is `.skip`.
+// Spec for the Victim FSM bodies (slice 4). Tests exercise the public
+// `victim.applyHaunt(hauntId)` + `victim.update(dtMs)` surface against the
+// real `confession-room.json` stage data. Bias rolls use a seeded
+// `mulberry32` RNG for determinism (single seed re-yields the same draws).
 //
 // Spec sources:
-//   - docs/PRD.md §"State machines" (line 99) — Victim FSM API
-//   - docs/PRD.md §"Haunt rules" (lines 122-123) — reaction tendencies, interrupts
-//   - docs/PRD.md §"Personality bias" (line 127)
-//   - docs/PRD.md §"Victim reactions" (lines 129-133) — timers + smash
-//   - docs/PRD.md §"Testing Decisions" → "Modules under test" #3 (lines 196-199)
-//   - .scratch/grim-griper-puzzle-mvp/issues/08-test-victim-fsm.md
+//   - docs/PRD.md §6.5 "Victim FSM (7 states)"  — timers + exits + side effects
+//   - docs/PRD.md §6.6 "Reaction Selection"      — bucket + bias
+//   - docs/PRD.md §6.7 "Interrupt Routing"       — non-NEUTRAL haunt = clean interrupt
+//   - docs/PRD.md §14.2 (round-2 clarifier)      — locks the 7-state model
 //
-// Primary reaction tendencies (PRD line 122):
-//   RISE    → FLEEING
-//   WHISPER → AGGRESSIVE
-//   SHATTER → FLEEING
-//   VOICE   → CALLING_FOR_HELP
-//
-// Interrupt routes (PRD line 123):
-//   SHATTER on CALLING_FOR_HELP → FLEEING
-//   VOICE   on AGGRESSIVE       → CALLING_FOR_HELP
-//   RISE    on FLEEING          → AGGRESSIVE
-// Each new state always starts with a full fresh timer.
-//
-// Reaction timers (PRD lines 130-132):
-//   AGGRESSIVE         → ~4s default, ends immediately on smash
-//   FLEEING            → 6000ms to doors → STAGE_FAIL_SOUL_ESCAPED
-//   CALLING_FOR_HELP   → 8000ms          → STAGE_FAIL_HELP_ARRIVED
+// State coverage:
+//   NEUTRAL            — default; correct waypoint stays NEUTRAL.
+//   AGGRESSIVE         — smash predicate disables nearest unlocked haunt.
+//   FLEEING            — walks to doors.x, emits STAGE_FAIL SOUL_ESCAPED.
+//   CALLING_FOR_HELP   — timer-only fail; unreachable for Aldric (bias overrides bucket).
+//   PRAYING            — 6s auto-end + 3× sight drain getter + clean interrupt.
+//   RITUAL             — 8s timer → STAGE_FAIL SOUL_SAVED.
+//   HIDING             — fear tick + Reaper-proximity → FLEEING.
 
 import { describe, test, expect } from 'vitest';
+import { Container } from 'pixi.js';
+import { Victim } from '../src/entities/Victim.js';
+import { mulberry32 } from '../src/util/rng.js';
 import stage from '../src/stages/confession-room.json' with { type: 'json' };
 
-// TODO unskip when VictimFSM lands (slice 4, owner #3 Haunt AI).
-// Adjust path when #3 commits — likely src/ai/VictimFSM.js but could be
-// src/victim/VictimFSM.js depending on directory choices made during slice 3.
-// import { VictimFSM } from '../src/ai/VictimFSM.js';
-// import { mulberry32 } from '../src/util/rng.js'; // seeded RNG helper
+// Minimal fake gameState — matches the real GameState shape closely enough
+// for the FSM to run. (We don't import GameState because it ships with no
+// argumentless constructor coupling, but mirroring the field names exactly
+// is the point.)
+function makeGameState({ fear = 0, unlocked = ['SHATTER', 'VOICE', 'WHISPER', 'RISE'] } = {}) {
+  return {
+    reaperTraits: {
+      sightDurationMs: 8000,
+      hauntSlotCount: 4,
+      moveSpeed: 220,
+      fearGainMultiplier: 1.0,
+      footstepsAudible: false,
+    },
+    unlockedHaunts: new Set(unlocked),
+    collectedEvidence: new Set(),
+    fear,
+    recentHaunts: [],
+    phase2FirstHauntTimeMs: null,
+    phase2EventLog: [],
+  };
+}
 
-// NOTE on confession-room.json: slice 1's JSON does not yet carry
-// `victim.routine`, `victim.personality.bias`, or evidence hauntSource bindings.
-// Stage+Art Lead expands it during slice 2 (evidence) and slice 3-4 (victim).
-// Once expanded, these tests should pull personality straight from
-// `stage.victim.personality` (issue 08 acceptance line 27).
+function makeVictim({ rng, gameState, view, fatedPose, now } = {}) {
+  // Use a real Pixi Container for the view — it works fine under vitest's
+  // default node env (no renderer invoked unless we mount to a stage).
+  const v = new Victim({
+    stageData: stage,
+    gameState: gameState || makeGameState(),
+    view: view || new Container(),
+    createFatedDeathPose: fatedPose || (() => new Container()),
+    floorY: 600,
+    onFatedDeathComplete: () => {},
+    rng: rng || mulberry32(1),
+    now: now || (() => 0),
+  });
+  // Mark routine as "started at least once" so NEUTRAL re-entry re-engages it.
+  // (Tests don't need routine to drive — applyHaunt is the focus — but flag
+  // makes state semantics match runtime.)
+  v._routineStartedAtLeastOnce = true;
+  return v;
+}
 
-describe('VictimFSM — transitions from NEUTRAL on correct waypoint', () => {
-  // Correct waypoint, NEUTRAL → state stays NEUTRAL, fearDelta = 35.
-  // (Reactions only roll on wrong-waypoint per PRD line 119.)
-  test.skip('SHATTER at Altar + NEUTRAL → stays NEUTRAL, fearDelta = 35', () => {
-    // const fsm = new VictimFSM({
-    //   rng: mulberry32(1),
-    //   personality: stage.victim.personality,
-    //   routine: stage.victim.routine,
-    // });
-    // const result = fsm.applyHaunt('SHATTER', 'altar');
-    // expect(result.stateAfter).toBe('NEUTRAL');
-    // expect(result.fearDelta).toBe(35);
-    // expect(result.sideEffects).toEqual([]);
+describe('VictimFSM — NEUTRAL: correct waypoint stays NEUTRAL', () => {
+  // PRD §6.5: NEUTRAL is the only state where fear gains. Correct waypoint
+  // gives +35 (= fearMath default); state stays NEUTRAL.
+  test.each([
+    ['SHATTER', 'altar'],
+    ['VOICE', 'confessionBooth'],
+    ['WHISPER', 'lectern'],
+    ['RISE', 'sacristy'],
+  ])('%s at %s + NEUTRAL → stays NEUTRAL, fearDelta=35', (haunt, waypoint) => {
+    const v = makeVictim();
+    v.currentWaypointId = waypoint;
+    const r = v.applyHaunt(haunt);
+    expect(r.stateAfter).toBe('NEUTRAL');
+    expect(r.fearDelta).toBe(35);
   });
 });
 
-describe('VictimFSM — wrong-waypoint reactions in NEUTRAL', () => {
-  // Wrong waypoint → fearDelta 5, then roll a Reaction biased by personality.
-  // With Aldric's 60% CALLING_FOR_HELP bias, the else branch enters the
-  // haunt's primary reaction tendency (PRD §"Resolved Design Questions" #5,
-  // line 233 — the `fallback` key is REMOVED; else branch uses primary).
-  //
-  // Seeded RNG = mulberry32(seed) with first draw < 0.6 ⇒ CALLING_FOR_HELP,
-  // first draw >= 0.6 ⇒ haunt's primary tendency.
-  test.skip('SHATTER at Lectern + NEUTRAL, RNG draw 0.3 → CALLING_FOR_HELP (bias hit)', () => {
-    // const fsm = new VictimFSM({
-    //   rng: () => 0.3, // deterministic single-call stub
-    //   personality: stage.victim.personality,
-    //   routine: stage.victim.routine,
-    // });
-    // const result = fsm.applyHaunt('SHATTER', 'lectern');
-    // expect(result.stateAfter).toBe('CALLING_FOR_HELP');
-    // expect(result.fearDelta).toBe(5);
+describe('VictimFSM — NEUTRAL: wrong-waypoint reactions (Aldric bias)', () => {
+  // Bias-hit path (rng draw < 0.6) → RITUAL across every haunt/waypoint combo.
+  test.each([
+    ['SHATTER', 'lectern'],
+    ['SHATTER', 'confessionBooth'],
+    ['SHATTER', 'sacristy'],
+    ['VOICE', 'altar'],
+    ['VOICE', 'lectern'],
+    ['VOICE', 'sacristy'],
+    ['WHISPER', 'altar'],
+    ['WHISPER', 'confessionBooth'],
+    ['WHISPER', 'sacristy'],
+    ['RISE', 'altar'],
+    ['RISE', 'lectern'],
+    ['RISE', 'confessionBooth'],
+  ])('%s at %s (wrong) + NEUTRAL + bias hit → RITUAL, fearDelta=5', (haunt, waypoint) => {
+    const v = makeVictim({ rng: () => 0.0 });
+    v.currentWaypointId = waypoint;
+    const r = v.applyHaunt(haunt);
+    expect(r.stateAfter).toBe('RITUAL');
+    expect(r.fearDelta).toBe(5);
   });
 
-  test.skip('SHATTER at Lectern + NEUTRAL, RNG draw 0.8 → FLEEING (SHATTER primary)', () => {
-    // const fsm = new VictimFSM({
-    //   rng: () => 0.8,
-    //   personality: stage.victim.personality,
-    //   routine: stage.victim.routine,
-    // });
-    // const result = fsm.applyHaunt('SHATTER', 'lectern');
-    // expect(result.stateAfter).toBe('FLEEING');
-  });
-
-  test.skip('WHISPER at Altar + NEUTRAL, RNG draw 0.8 → AGGRESSIVE (WHISPER primary)', () => {
-    // RNG 0.8 ≥ 0.6 bias threshold → fall through to haunt's primary tendency.
-    // const fsm = new VictimFSM({ rng: () => 0.8, personality: stage.victim.personality, routine: stage.victim.routine });
-    // const result = fsm.applyHaunt('WHISPER', 'altar');
-    // expect(result.stateAfter).toBe('AGGRESSIVE');
-  });
-
-  test.skip('RISE at Altar + NEUTRAL, RNG draw 0.8 → FLEEING (RISE primary)', () => {
-    // const fsm = new VictimFSM({ rng: () => 0.8, personality: stage.victim.personality, routine: stage.victim.routine });
-    // const result = fsm.applyHaunt('RISE', 'altar');
-    // expect(result.stateAfter).toBe('FLEEING');
-  });
-
-  test.skip('VOICE at Altar + NEUTRAL, RNG draw 0.8 → CALLING_FOR_HELP (VOICE primary, also matches bias coincidentally)', () => {
-    // const fsm = new VictimFSM({ rng: () => 0.8, personality: stage.victim.personality, routine: stage.victim.routine });
-    // const result = fsm.applyHaunt('VOICE', 'altar');
-    // expect(result.stateAfter).toBe('CALLING_FOR_HELP');
-  });
-});
-
-describe('VictimFSM — interrupt routing (PRD line 123)', () => {
-  // Each interrupt cancels old timer and starts the new state's full fresh
-  // timer (issue 08 acceptance line 20).
-  test.skip('SHATTER while CALLING_FOR_HELP → FLEEING with fresh 6000ms timer', () => {
-    // const fsm = new VictimFSM({ rng: () => 0.3, personality: stage.victim.personality, routine: stage.victim.routine });
-    // fsm.applyHaunt('VOICE', 'altar'); // → CALLING_FOR_HELP
-    // fsm.tick(3000); // burn 3s of the 8s call timer
-    // const result = fsm.applyHaunt('SHATTER', 'lectern');
-    // expect(result.stateAfter).toBe('FLEEING');
-    // expect(result.fearDelta).toBe(0); // interrupt during non-NEUTRAL → 0 fear
-    // // FLEEING completes at full 6000ms from interrupt, not residual:
-    // fsm.tick(5999);
-    // expect(fsm.state).toBe('FLEEING');
-    // fsm.tick(1);
-    // // emits STAGE_FAIL_SOUL_ESCAPED on completion
-  });
-
-  test.skip('VOICE while AGGRESSIVE → CALLING_FOR_HELP with fresh 8000ms timer', () => {
-    // const fsm = new VictimFSM({ rng: () => 0.3, personality: stage.victim.personality, routine: stage.victim.routine });
-    // fsm.applyHaunt('WHISPER', 'altar'); // RNG 0.3 → bias hits CALLING_FOR_HELP; want AGGRESSIVE primary instead
-    // // Use rng 0.8 to fall through to WHISPER primary = AGGRESSIVE.
-    // const fsm2 = new VictimFSM({ rng: () => 0.8, personality: stage.victim.personality, routine: stage.victim.routine });
-    // fsm2.applyHaunt('WHISPER', 'altar'); // → AGGRESSIVE
-    // const result = fsm2.applyHaunt('VOICE', 'altar');
-    // expect(result.stateAfter).toBe('CALLING_FOR_HELP');
-  });
-
-  test.skip('RISE while FLEEING → AGGRESSIVE with fresh timer', () => {
-    // const fsm = new VictimFSM({ rng: () => 0.8, personality: stage.victim.personality, routine: stage.victim.routine });
-    // fsm.applyHaunt('SHATTER', 'lectern'); // → FLEEING (RNG 0.8 fall-through, SHATTER primary)
-    // const result = fsm.applyHaunt('RISE', 'altar');
-    // expect(result.stateAfter).toBe('AGGRESSIVE');
-  });
-
-  // Non-matching interrupt: haunt fired in a reaction it does not counter.
-  // PRD line 121, issue 08 line 21.
-  test.skip('VOICE during FLEEING → no-op (no interrupt match), fearDelta 0, state unchanged', () => {
-    // const fsm = new VictimFSM({ rng: () => 0.8, personality: stage.victim.personality, routine: stage.victim.routine });
-    // fsm.applyHaunt('SHATTER', 'lectern'); // → FLEEING
-    // const result = fsm.applyHaunt('VOICE', 'altar');
-    // expect(result.stateAfter).toBe('FLEEING');
-    // expect(result.fearDelta).toBe(0);
-    // expect(result.sideEffects).toEqual([]);
+  // Bias-miss path (rng draw ≥ 0.6) → bucket default per haunt config.
+  test.each([
+    // low bucket (fear=0): lowFearTendency
+    ['SHATTER', 'lectern', 0, 'PRAYING'],
+    ['VOICE', 'lectern', 0, 'PRAYING'],
+    ['WHISPER', 'altar', 0, 'AGGRESSIVE'],
+    ['RISE', 'altar', 0, 'AGGRESSIVE'],
+    // high bucket (fear=80): highFearTendency
+    ['SHATTER', 'lectern', 80, 'FLEEING'],
+    ['VOICE', 'lectern', 80, 'HIDING'],
+    ['WHISPER', 'altar', 80, 'HIDING'],
+    ['RISE', 'altar', 80, 'FLEEING'],
+  ])('%s at %s, fear=%d, bias miss → %s', (haunt, waypoint, fear, expected) => {
+    const v = makeVictim({ rng: () => 0.99, gameState: makeGameState({ fear }) });
+    v.currentWaypointId = waypoint;
+    const r = v.applyHaunt(haunt);
+    expect(r.stateAfter).toBe(expected);
   });
 });
 
 describe('VictimFSM — Aldric 60% bias as a statistical property', () => {
-  // Issue 08 acceptance line 22: over N=1000 seeded wrong-waypoint NEUTRAL
-  // samples, CALLING_FOR_HELP count is within a tolerance window of 600.
-  // ±50 (i.e. 550..650) is the placeholder window — pin the actual bound when
-  // the impl ships its RNG choice.
-  test.skip('1000 wrong-waypoint NEUTRAL samples: CALLING_FOR_HELP count ∈ [550, 650]', () => {
-    // const rng = mulberry32(42); // fixed seed for reproducibility
-    // let callCount = 0;
-    // for (let i = 0; i < 1000; i++) {
-    //   const fsm = new VictimFSM({ rng, personality: stage.victim.personality, routine: stage.victim.routine });
-    //   const result = fsm.applyHaunt('SHATTER', 'lectern'); // wrong waypoint for SHATTER
-    //   if (result.stateAfter === 'CALLING_FOR_HELP') callCount++;
-    // }
-    // expect(callCount).toBeGreaterThanOrEqual(550);
-    // expect(callCount).toBeLessThanOrEqual(650);
-  });
-});
-
-describe('VictimFSM — tick timers', () => {
-  // PRD line 131; issue 08 line 23.
-  test.skip('FLEEING reaches doors in 6000ms → emits STAGE_FAIL_SOUL_ESCAPED', () => {
-    // const fsm = new VictimFSM({ rng: () => 0.8, personality: stage.victim.personality, routine: stage.victim.routine });
-    // fsm.applyHaunt('SHATTER', 'lectern'); // → FLEEING
-    // const events = [];
-    // fsm.on?.('stageFail', e => events.push(e));
-    // fsm.tick(5999);
-    // expect(events).toHaveLength(0);
-    // fsm.tick(1);
-    // expect(events).toContainEqual(expect.objectContaining({ type: 'STAGE_FAIL_SOUL_ESCAPED' }));
-  });
-
-  // PRD line 132; issue 08 line 24.
-  test.skip('CALLING_FOR_HELP completes in 8000ms → emits STAGE_FAIL_HELP_ARRIVED', () => {
-    // const fsm = new VictimFSM({ rng: () => 0.3, personality: stage.victim.personality, routine: stage.victim.routine });
-    // fsm.applyHaunt('VOICE', 'altar'); // → CALLING_FOR_HELP
-    // const events = [];
-    // fsm.on?.('stageFail', e => events.push(e));
-    // fsm.tick(7999);
-    // expect(events).toHaveLength(0);
-    // fsm.tick(1);
-    // expect(events).toContainEqual(expect.objectContaining({ type: 'STAGE_FAIL_HELP_ARRIVED' }));
-  });
-});
-
-describe('VictimFSM — AGGRESSIVE smash side-effect', () => {
-  // PRD line 130; issue 08 line 25.
-  // AGGRESSIVE smashes the nearest in-range unlocked haunt-source, permanently
-  // disabling that haunt's slot for the rest of the run.
-  test.skip('AGGRESSIVE smash disables nearest unlocked haunt-source, emits hauntSlotDisabled', () => {
-    // const fsm = new VictimFSM({
-    //   rng: () => 0.8,
-    //   personality: stage.victim.personality,
-    //   routine: stage.victim.routine,
-    //   evidence: stage.evidence, // includes hauntSourceWaypointId per PRD line 111
-    // });
-    // fsm.applyHaunt('WHISPER', 'altar'); // → AGGRESSIVE (RNG 0.8 fall-through)
-    // const events = [];
-    // fsm.on?.('hauntSlotDisabled', e => events.push(e));
-    // fsm.tick(10); // smash fires on first tick if a source is in range
-    // expect(events).toHaveLength(1);
-    // expect(events[0].hauntId).toBeDefined();
-    //
-    // // Subsequent applyHaunt for the disabled hauntId behaves as if greyed:
-    // const disabledHauntId = events[0].hauntId;
-    // const correctWp = /* waypoint matching disabledHauntId */ '';
-    // const result = fsm.applyHaunt(disabledHauntId, correctWp);
-    // expect(result.fearDelta).toBe(0);
-  });
-
-  test.skip('AGGRESSIVE with no in-range source → ends after ~4s default duration, no smash event', () => {
-    // const fsm = new VictimFSM({
-    //   rng: () => 0.8,
-    //   personality: stage.victim.personality,
-    //   routine: stage.victim.routine,
-    //   evidence: [], // no sources in range
-    // });
-    // fsm.applyHaunt('WHISPER', 'altar'); // → AGGRESSIVE
-    // const events = [];
-    // fsm.on?.('hauntSlotDisabled', e => events.push(e));
-    // fsm.tick(4000);
-    // expect(fsm.state).toBe('NEUTRAL');
-    // expect(events).toHaveLength(0);
-  });
-});
-
-describe('VictimFSM — fearDelta during non-NEUTRAL is always 0 (PRD line 121)', () => {
-  test.skip.each(['AGGRESSIVE', 'FLEEING', 'CALLING_FOR_HELP'])(
-    'applyHaunt during %s → fearDelta 0',
-    (state) => {
-      // Setup omitted — once impl lands, force state, then call applyHaunt
-      // with a non-interrupting haunt and assert fearDelta === 0.
+  // Over 1000 wrong-waypoint NEUTRAL samples with a seeded RNG, the fraction
+  // entering RITUAL should approach 60%. Window ±5% (550..650).
+  test('1000 wrong-waypoint NEUTRAL samples: RITUAL count ∈ [550, 650]', () => {
+    const rng = mulberry32(42);
+    let ritualCount = 0;
+    for (let i = 0; i < 1000; i++) {
+      const v = makeVictim({ rng });
+      v.currentWaypointId = 'lectern'; // wrong for SHATTER
+      const r = v.applyHaunt('SHATTER');
+      if (r.stateAfter === 'RITUAL') ritualCount++;
     }
+    expect(ritualCount).toBeGreaterThanOrEqual(550);
+    expect(ritualCount).toBeLessThanOrEqual(650);
+  });
+});
+
+describe('VictimFSM — interrupt routing (clean → NEUTRAL, fearDelta=0)', () => {
+  // PRD §6.7: any haunt during any non-NEUTRAL state interrupts to NEUTRAL
+  // with no fear gain. Replaces the per-haunt interrupt table.
+  test.each(['AGGRESSIVE', 'FLEEING', 'CALLING_FOR_HELP', 'PRAYING', 'RITUAL', 'HIDING'])(
+    'haunt during %s → NEUTRAL, fearDelta=0',
+    (state) => {
+      const v = makeVictim();
+      v.fsm.transition(state);
+      expect(v.state).toBe(state);
+      const r = v.applyHaunt('SHATTER');
+      expect(r.stateAfter).toBe('NEUTRAL');
+      expect(r.fearDelta).toBe(0);
+    },
   );
+});
+
+describe('VictimFSM — RITUAL: 8000ms → STAGE_FAIL SOUL_SAVED', () => {
+  test('RITUAL completes in 8000ms, emits stageFailed SOUL_SAVED', () => {
+    const v = makeVictim({ rng: () => 0.0 });
+    v.currentWaypointId = 'lectern';
+    v.applyHaunt('SHATTER'); // → RITUAL
+    expect(v.state).toBe('RITUAL');
+
+    v.update(7999);
+    expect(v.gameState.phase2EventLog).not.toContainEqual(
+      expect.objectContaining({ type: 'stageFailed' }),
+    );
+
+    v.update(1);
+    expect(v.gameState.phase2EventLog).toContainEqual(
+      { type: 'stageFailed', reason: 'SOUL_SAVED' },
+    );
+    expect(v.stageFailReason).toBe('SOUL_SAVED');
+  });
+});
+
+describe('VictimFSM — FLEEING: 6000ms or reach doors → STAGE_FAIL SOUL_ESCAPED', () => {
+  test('FLEEING walks toward doors.x and fails when it arrives', () => {
+    const v = makeVictim({ rng: () => 0.99, gameState: makeGameState({ fear: 80 }) });
+    v.currentWaypointId = 'lectern';
+    // Place victim well right of doors so we know dir is positive and short.
+    // doors.x = 1180 per confession-room.json. Place at 1140 so 40px gap.
+    // At moveSpeed 220 px/s = 0.22 px/ms, 40px takes ~182ms.
+    v.view.x = 1140;
+    v.applyHaunt('SHATTER'); // → FLEEING (highFearTendency, bias miss)
+    expect(v.state).toBe('FLEEING');
+
+    v.update(200); // overshoots doors
+    expect(v.view.x).toBe(stage.doors.x);
+    expect(v.gameState.phase2EventLog).toContainEqual(
+      { type: 'stageFailed', reason: 'SOUL_ESCAPED' },
+    );
+  });
+
+  test('FLEEING timer expires at 6000ms even if doors not reached → SOUL_ESCAPED', () => {
+    const v = makeVictim({ rng: () => 0.99, gameState: makeGameState({ fear: 80 }) });
+    v.currentWaypointId = 'lectern';
+    v.view.x = 0; // very far left — can't reach 1180 within timeout at 220 px/s
+    v.applyHaunt('SHATTER');
+    expect(v.state).toBe('FLEEING');
+
+    // 1180 px at 220 px/s = ~5363 ms — would actually reach doors before timeout.
+    // Move start to a position that won't reach doors in 6000ms even at full speed:
+    // 6000 * 220 / 1000 = 1320 px traveled. Start at -1000 so doors-x=1180 is 2180 away.
+    v.view.x = -1000;
+    v._stateElapsedMs = 0;
+    v._stageFailEmitted = false;
+    v.gameState.phase2EventLog.length = 0;
+
+    v.update(5999);
+    expect(v.gameState.phase2EventLog).not.toContainEqual(
+      expect.objectContaining({ type: 'stageFailed' }),
+    );
+    v.update(1);
+    expect(v.gameState.phase2EventLog).toContainEqual(
+      { type: 'stageFailed', reason: 'SOUL_ESCAPED' },
+    );
+  });
+});
+
+describe('VictimFSM — CALLING_FOR_HELP: 8000ms → STAGE_FAIL HELP_ARRIVED', () => {
+  test('CALLING_FOR_HELP completes in 8000ms with HELP_ARRIVED', () => {
+    // Forced transition (Aldric never naturally enters this state).
+    const v = makeVictim();
+    v.fsm.transition('CALLING_FOR_HELP');
+    expect(v.state).toBe('CALLING_FOR_HELP');
+
+    v.update(7999);
+    expect(v.gameState.phase2EventLog).not.toContainEqual(
+      expect.objectContaining({ type: 'stageFailed' }),
+    );
+
+    v.update(1);
+    expect(v.gameState.phase2EventLog).toContainEqual(
+      { type: 'stageFailed', reason: 'HELP_ARRIVED' },
+    );
+  });
+});
+
+describe('VictimFSM — PRAYING: 6000ms auto-end + 3× sight drain + interrupt', () => {
+  test('PRAYING auto-ends at 6000ms → NEUTRAL', () => {
+    const v = makeVictim({ rng: () => 0.99 });
+    v.currentWaypointId = 'lectern';
+    // fear=0 + bias miss → bucket default = PRAYING for SHATTER.lowFearTendency.
+    v.applyHaunt('SHATTER');
+    expect(v.state).toBe('PRAYING');
+
+    v.update(5999);
+    expect(v.state).toBe('PRAYING');
+
+    v.update(1);
+    expect(v.state).toBe('NEUTRAL');
+  });
+
+  test('sightDrainMultiplier is 3× while PRAYING, 1× otherwise', () => {
+    const v = makeVictim({ rng: () => 0.99 });
+    expect(v.sightDrainMultiplier).toBe(1);
+    v.currentWaypointId = 'lectern';
+    v.applyHaunt('SHATTER');
+    expect(v.state).toBe('PRAYING');
+    expect(v.sightDrainMultiplier).toBe(3);
+    v.fsm.transition('NEUTRAL');
+    expect(v.sightDrainMultiplier).toBe(1);
+  });
+
+  test('haunt during PRAYING is a clean interrupt: → NEUTRAL, fearDelta=0', () => {
+    const v = makeVictim({ rng: () => 0.99 });
+    v.currentWaypointId = 'lectern';
+    v.applyHaunt('SHATTER'); // → PRAYING
+    expect(v.state).toBe('PRAYING');
+
+    const r = v.applyHaunt('VOICE');
+    expect(r.stateAfter).toBe('NEUTRAL');
+    expect(r.fearDelta).toBe(0);
+  });
+});
+
+describe('VictimFSM — AGGRESSIVE: smash predicate + slot disable', () => {
+  test('AGGRESSIVE in range of unlocked evidence → smash, disable slot, return NEUTRAL', () => {
+    const v = makeVictim({ rng: () => 0.99 });
+    // WHISPER@altar, low bucket → AGGRESSIVE.
+    v.currentWaypointId = 'altar';
+    // Position victim near the chalice (SHATTER host at x=220).
+    v.view.x = 220;
+    v.applyHaunt('WHISPER');
+    expect(v.state).toBe('AGGRESSIVE');
+
+    // First tick — smash predicate hits since chalice@220 is at distance 0.
+    v.update(10);
+    expect(v.state).toBe('NEUTRAL');
+    expect(v.gameState.smashedHaunts.has('SHATTER')).toBe(true);
+  });
+
+  test('AGGRESSIVE with no in-range source → returns to NEUTRAL after 4s', () => {
+    // Place victim far from every evidence host x. The evidence are at
+    // 220, 500, 780, 1180; pick 1500 (300px from nearest at 1180).
+    const v = makeVictim({ rng: () => 0.99 });
+    v.currentWaypointId = 'altar';
+    v.view.x = 1500;
+    v.applyHaunt('WHISPER');
+    expect(v.state).toBe('AGGRESSIVE');
+
+    v.update(3999);
+    expect(v.state).toBe('AGGRESSIVE');
+    expect(v.gameState.smashedHaunts.size).toBe(0);
+
+    v.update(1);
+    expect(v.state).toBe('NEUTRAL');
+    expect(v.gameState.smashedHaunts.size).toBe(0);
+  });
+
+  test('smash skips already-smashed and locked haunts', () => {
+    // Only SHATTER unlocked. Pre-smash SHATTER → no candidate left.
+    const gs = makeGameState({ unlocked: ['SHATTER', 'WHISPER'] });
+    gs.smashedHaunts = new Set(['SHATTER']);
+    const v = makeVictim({ rng: () => 0.99, gameState: gs });
+    v.currentWaypointId = 'altar';
+    v.view.x = 220;
+    v.applyHaunt('WHISPER'); // → AGGRESSIVE
+    v.update(10);
+    // SHATTER not re-smashed; nothing else in range of x=220 (WHISPER host at x=500 → 280px away)
+    expect(v.state).toBe('AGGRESSIVE'); // still searching
+    expect(gs.smashedHaunts.has('SHATTER')).toBe(true);
+    expect(gs.smashedHaunts.size).toBe(1);
+  });
+});
+
+describe('VictimFSM — HIDING: fear tick + Reaper-proximity → FLEEING', () => {
+  test('HIDING ticks fear +1/s through applyFearGain chokepoint', () => {
+    const gs = makeGameState({ fear: 80 });
+    const v = makeVictim({ rng: () => 0.99, gameState: gs });
+    v.currentWaypointId = 'lectern';
+    v.applyHaunt('VOICE'); // → HIDING (highFearTendency)
+    expect(v.state).toBe('HIDING');
+
+    // No Reaper position set → no proximity flip.
+    const fearBefore = gs.fear;
+    v.update(1000);
+    expect(gs.fear).toBeCloseTo(fearBefore + 1, 5);
+  });
+
+  test('HIDING fear tick scales by fearGainMultiplier', () => {
+    const gs = makeGameState({ fear: 80 });
+    gs.reaperTraits.fearGainMultiplier = 2.0;
+    const v = makeVictim({ rng: () => 0.99, gameState: gs });
+    v.currentWaypointId = 'lectern';
+    v.applyHaunt('VOICE');
+    expect(v.state).toBe('HIDING');
+
+    const fearBefore = gs.fear;
+    v.update(1000);
+    expect(gs.fear).toBeCloseTo(fearBefore + 2, 5);
+  });
+
+  test('Reaper within 80px + Sight ON → HIDING flips to FLEEING', () => {
+    const gs = makeGameState({ fear: 80 });
+    const v = makeVictim({ rng: () => 0.99, gameState: gs });
+    // Move victim visually to the lectern so HIDING.enter snaps to lectern.
+    v.view.x = 500;
+    v.currentWaypointId = 'lectern';
+    v.applyHaunt('VOICE');
+    expect(v.state).toBe('HIDING');
+    expect(v.view.x).toBe(500); // snapped to nearest waypoint (lectern @ 500)
+    v.setReaperX(550); // 50px away, < 80
+    v.setSightOn(true);
+
+    v.update(16);
+    expect(v.state).toBe('FLEEING');
+  });
+
+  test('Reaper within 80px but Sight OFF → HIDING stays put', () => {
+    const v = makeVictim({ rng: () => 0.99, gameState: makeGameState({ fear: 80 }) });
+    v.view.x = 500;
+    v.currentWaypointId = 'lectern';
+    v.applyHaunt('VOICE');
+    expect(v.state).toBe('HIDING');
+
+    v.setReaperX(500);
+    v.setSightOn(false);
+
+    v.update(16);
+    expect(v.state).toBe('HIDING');
+  });
+
+  test('Reaper > 80px even with Sight ON → HIDING stays put', () => {
+    const v = makeVictim({ rng: () => 0.99, gameState: makeGameState({ fear: 80 }) });
+    v.view.x = 500;
+    v.currentWaypointId = 'lectern';
+    v.applyHaunt('VOICE');
+    expect(v.state).toBe('HIDING');
+
+    v.setReaperX(700); // 200px from lectern@500
+    v.setSightOn(true);
+
+    v.update(16);
+    expect(v.state).toBe('HIDING');
+  });
+
+  test('HIDING has no auto-timeout (state persists indefinitely)', () => {
+    const v = makeVictim({ rng: () => 0.99, gameState: makeGameState({ fear: 80 }) });
+    v.currentWaypointId = 'lectern';
+    v.applyHaunt('VOICE');
+    expect(v.state).toBe('HIDING');
+
+    v.update(30000); // 30s of nothing happening
+    // Fear gets clamped at 100.
+    expect(v.gameState.fear).toBe(100);
+    // Stay in HIDING — no timer-based exit.
+    expect(v.state).toBe('HIDING');
+  });
+});
+
+describe('VictimFSM — fearDelta during non-NEUTRAL is always 0', () => {
+  test.each(['AGGRESSIVE', 'FLEEING', 'CALLING_FOR_HELP', 'PRAYING', 'RITUAL', 'HIDING'])(
+    'applyHaunt during %s → fearDelta=0',
+    (state) => {
+      const v = makeVictim();
+      v.fsm.transition(state);
+      const r = v.applyHaunt('SHATTER');
+      expect(r.fearDelta).toBe(0);
+    },
+  );
+});
+
+describe('VictimFSM — CALLING_FOR_HELP unreachable for Aldric (bias never picks it)', () => {
+  // The bias is RITUAL@60%. Even on miss, the bucket defaults are
+  // PRAYING/AGGRESSIVE/HIDING/FLEEING — never CALLING_FOR_HELP. This is
+  // an Aldric-specific property (per PRD §6.5 + §14.2 #5).
+  test('1000 seeded wrong-waypoint NEUTRAL samples produce zero CALLING_FOR_HELP', () => {
+    const rng = mulberry32(7);
+    const haunts = ['SHATTER', 'VOICE', 'WHISPER', 'RISE'];
+    const wrongWp = { SHATTER: 'lectern', VOICE: 'altar', WHISPER: 'altar', RISE: 'altar' };
+    let callCount = 0;
+    for (let i = 0; i < 1000; i++) {
+      const h = haunts[i % haunts.length];
+      const fear = i % 2 === 0 ? 0 : 90; // alternate low/high bucket
+      const v = makeVictim({ rng, gameState: makeGameState({ fear }) });
+      v.currentWaypointId = wrongWp[h];
+      const r = v.applyHaunt(h);
+      if (r.stateAfter === 'CALLING_FOR_HELP') callCount++;
+    }
+    expect(callCount).toBe(0);
+  });
 });

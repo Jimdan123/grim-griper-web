@@ -1,15 +1,18 @@
-// Victim — routine walker + FSM stub.
+// Victim — routine walker + 7-state FSM.
 //
-// Owner: #3 Haunt AI Engineer. Slice 3 ships ONLY the NEUTRAL state +
-// routine walker + Fated Death entry. Slice 4 layers the other six FSM
-// states (AGGRESSIVE, FLEEING, CALLING_FOR_HELP, PRAYING, RITUAL, HIDING)
-// on top of this skeleton WITHOUT refactoring this file's structure.
+// Owner: #3 Haunt AI Engineer. Slice 3 shipped NEUTRAL + routine walker +
+// Fated Death entry. Slice 4 lands the full state bodies for AGGRESSIVE,
+// FLEEING, CALLING_FOR_HELP, PRAYING, RITUAL, HIDING, plus the
+// `applyHaunt(hauntId, opts)` entry point that drives interrupt routing
+// + reaction selection.
 //
 // Spec sources:
-//   - .scratch/grim-griper-puzzle-mvp/issues/03-slice-phase2-skeleton.md
-//   - docs/narrative/confession-room.md — Aldric's altar→lectern→booth→sacristy
-//     racket is the in-fiction routine; dwell timings encode "what he's doing"
-//     at each stop.
+//   - docs/PRD.md §6.5  "Victim FSM (7 states)"          — timers + exits + side effects
+//   - docs/PRD.md §6.6  "Reaction Selection"             — bucket + bias algorithm
+//   - docs/PRD.md §6.7  "Interrupt Routing"              — non-NEUTRAL haunt = clean interrupt
+//   - docs/PRD.md §6.4  "Fear Math"                      — applyFearGain chokepoint
+//   - docs/PRD.md §10.6 "Haunts" schema                  — per-haunt lowFear/highFear tendencies
+//   - docs/PRD.md §10.7 "Victim" schema                  — personality.bias
 //
 // Routine timing (data-driven from stageData.victim):
 //   - dwellMs:   ~3000  (idle at the waypoint)
@@ -22,15 +25,53 @@
 //   are evaluated against the destination, not the source. This makes the
 //   waypoint model victim-anchored and Reaper-position-irrelevant.
 //
-// FSM future-proofing:
-//   This file uses the shared StateMachine class (src/engine/StateMachine.js)
-//   so adding states in slice 4 is purely additive: drop new entries into the
-//   states map. NO call site in this file branches on `if (state === 'NEUTRAL')`.
-//   The routine walker is gated by a `_routineActive` flag instead, so future
-//   states can pause/resume it independently of FSM transitions.
+// FSM design:
+//   This file uses the shared StateMachine class (src/engine/StateMachine.js).
+//   The routine walker is gated by a `_routineActive` flag, so non-NEUTRAL
+//   states can halt it without re-checking state names. Side effects (smash
+//   target, fail emit, fear tick) live in the state bodies' update() methods.
+//
+// Public API:
+//   - applyHaunt(hauntId, { now }) → { fearDelta, stateBefore, stateAfter, sideEffects }
+//   - update(dtMs) — routine walker + FSM tick + fated death fade
+//   - startRoutine() / enterFatedDeath() — lifecycle hooks Stage calls
+//   - setReaperX(x) / setSightOn(bool) — perception inputs for HIDING
+//   - state (getter) / sightDrainMultiplier (getter, 3 while PRAYING)
+//
+// External wiring (NOT owned by this file; flagged in the slice-4 report):
+//   - actionHandlers.js should call victim.applyHaunt(hauntId) and read fearDelta
+//     from the result. The current `computeHauntFearDelta` call path bypasses
+//     the FSM transitions.
+//   - Stage.HAUNT.update should poll victim for a STAGE_FAIL sideEffect and
+//     transition to SCORE with the reason. Until that wiring lands, fail
+//     events still push into gameState.phase2EventLog and scoring reads them.
+//   - SightFSM should consult victim.sightDrainMultiplier to apply the 3×
+//     drain while PRAYING.
 
 import { Container } from 'pixi.js';
 import { StateMachine } from '../engine/StateMachine.js';
+import { applyFearGain, computeHauntFearDelta } from '../math/fearMath.js';
+import { pickReaction } from '../math/reactionSelection.js';
+
+// State timers (ms). PRD §6.5 table.
+const AGGRESSIVE_TIMEOUT_MS = 4000;
+const FLEEING_TIMEOUT_MS = 6000;
+const CALLING_FOR_HELP_TIMEOUT_MS = 8000;
+const PRAYING_TIMEOUT_MS = 6000;
+const RITUAL_TIMEOUT_MS = 8000;
+
+// AGGRESSIVE smash range — placeholder per PRD §19 #1. Tune at slice-4 playtest.
+const SMASH_RANGE_PX = 80;
+
+// HIDING — Reaper proximity that flips victim to FLEEING when Sight is ON.
+const HIDING_REAPER_PROXIMITY_PX = 80;
+
+// HIDING fear tick — +1 per second through the applyFearGain chokepoint.
+// PRD §6.5 line "FEAR ticks +1 / s while active".
+const HIDING_FEAR_PER_MS = 1 / 1000;
+
+// PRAYING sight drain multiplier — surfaced via getter; integrator wires.
+const PRAYING_SIGHT_DRAIN_MULT = 3;
 
 const FATED_DEATH_FADE_MS = 1500;
 
@@ -54,6 +95,12 @@ export class Victim {
    *                                           called after the still-pose fade
    *                                           finishes; Stage uses it to advance
    *                                           the phase FSM to SCORE.
+   * @param {() => number} [args.rng]          Source of randomness for bias rolls.
+   *                                           Defaults to Math.random; tests
+   *                                           inject a seeded RNG for determinism.
+   * @param {() => number} [args.now]          Wall-clock source. Defaults to
+   *                                           performance.now; tests inject a
+   *                                           stub.
    */
   constructor({
     stageData,
@@ -62,6 +109,8 @@ export class Victim {
     createFatedDeathPose,
     floorY,
     onFatedDeathComplete,
+    rng,
+    now,
   }) {
     this.stageData = stageData;
     this.gameState = gameState;
@@ -76,6 +125,25 @@ export class Victim {
     this.view.addChild(view);
     this._createFatedDeathPose = createFatedDeathPose;
     this._onFatedDeathComplete = onFatedDeathComplete || null;
+
+    // Deterministic-injectable rng/now for tests. Defaults safe for prod.
+    this._rng = typeof rng === 'function' ? rng : Math.random;
+    this._now = typeof now === 'function'
+      ? now
+      : () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+
+    // Perception inputs for HIDING — set by integrator each frame.
+    this._reaperX = null;
+    this._sightOn = false;
+
+    // Per-state runtime — timers + scratch.
+    this._stateElapsedMs = 0;
+    // Track smashed haunt slots on gameState so other systems (HUD,
+    // actionHandlers) can read them without coupling to Victim internals.
+    // Lazy-init so we don't require a GameState.js schema change.
+    if (gameState && !gameState.smashedHaunts) {
+      gameState.smashedHaunts = new Set();
+    }
 
     const routine = stageData.victim.routine;
     this._routine = routine;
@@ -149,49 +217,212 @@ export class Victim {
     this._fatedDeathElapsedMs = 0;
     this._fatedDeathCompleted = false;
 
-    // FSM. Slice 3 wires only NEUTRAL. The other six states are reserved
-    // slots — defining them now (as no-op stubs) means slice 4 fills in the
-    // enter/update/exit bodies without touching any of the call sites here.
+    // FSM. Slice 4: full state bodies for all 7 states.
+    //
+    // The `update(dtMs)` of each non-NEUTRAL state increments
+    // `this._stateElapsedMs`. Exits happen either on timer expiry (timed
+    // states) or on a predicate (AGGRESSIVE smash range, HIDING reaper-
+    // proximity). Enter halts the routine; exit re-enables it for states
+    // that return to NEUTRAL.
+    //
+    // STAGE_FAIL terminal states (FLEEING-at-doors, CALLING_FOR_HELP timeout,
+    // RITUAL timeout) call `this._emitStageFail(reason)` which pushes a
+    // `stageFailed` event onto gameState.phase2EventLog. The Stage SCORE
+    // transition reads this in main.js / Stage.js (out-of-scope wiring noted
+    // in the slice-4 report).
     this.fsm = new StateMachine(
       {
         NEUTRAL: {
-          enter: () => {},
+          enter: () => {
+            // Re-engage the routine on re-entry. startRoutine() is idempotent
+            // and a no-op if not yet started.
+            if (this._routineStartedAtLeastOnce) {
+              this._routineActive = true;
+            }
+            this._stateElapsedMs = 0;
+          },
           update: () => {},
-          exit: () => {},
+          exit: () => {
+            // Halt routine for any non-NEUTRAL state. Per-state bodies will
+            // do nothing on top of this.
+            this._routineActive = false;
+          },
         },
+
         AGGRESSIVE: {
-          enter: () => {},
-          update: () => {},
+          enter: () => {
+            this._stateElapsedMs = 0;
+          },
+          update: (dtMs) => {
+            this._stateElapsedMs += dtMs;
+            // Smash predicate: nearest unlocked, non-smashed evidence host
+            // within SMASH_RANGE_PX of the victim's current x. Side effect:
+            // permanently disable that haunt's slot, then return to NEUTRAL.
+            const smashTargetHauntId = this._findSmashTarget();
+            if (smashTargetHauntId) {
+              this.gameState.smashedHaunts.add(smashTargetHauntId);
+              this._pendingSideEffects.push({
+                type: 'hauntSlotDisabled',
+                hauntId: smashTargetHauntId,
+              });
+              this.fsm.transition('NEUTRAL');
+              return;
+            }
+            // Timeout: no in-range target — fall back to NEUTRAL after 4s.
+            if (this._stateElapsedMs >= AGGRESSIVE_TIMEOUT_MS) {
+              this.fsm.transition('NEUTRAL');
+            }
+          },
           exit: () => {},
         },
+
         FLEEING: {
-          enter: () => {},
-          update: () => {},
+          enter: () => {
+            this._stateElapsedMs = 0;
+          },
+          update: (dtMs) => {
+            this._stateElapsedMs += dtMs;
+            // Walk toward doors at the same speed Player uses (traits.moveSpeed).
+            // doors.x is authored in confession-room.json (PRD §10.1).
+            const doorsX = this.stageData.doors?.x;
+            const moveSpeed =
+              (this.gameState && this.gameState.reaperTraits?.moveSpeed) || 220;
+            if (Number.isFinite(doorsX)) {
+              const dir = doorsX > this.view.x ? 1 : -1;
+              const step = moveSpeed * (dtMs / 1000) * dir;
+              const next = this.view.x + step;
+              // Snap-to-doors check: if we've reached / passed doorsX, fail.
+              if ((dir > 0 && next >= doorsX) || (dir < 0 && next <= doorsX)) {
+                this.view.x = doorsX;
+                this._emitStageFail('SOUL_ESCAPED');
+                return;
+              }
+              this.view.x = next;
+            }
+            if (this._stateElapsedMs >= FLEEING_TIMEOUT_MS) {
+              // Timer expired without reaching doors — per PRD §6.5 the timer
+              // exit also fails the stage with SOUL_ESCAPED. (Treat as "he
+              // got away through any exit.")
+              this._emitStageFail('SOUL_ESCAPED');
+            }
+          },
           exit: () => {},
         },
+
         CALLING_FOR_HELP: {
-          enter: () => {},
-          update: () => {},
-          exit: () => {},
+          // Aldric never enters this state (bias always overrides bucket); it
+          // remains here for post-MVP victims like Master Ode.
+          enter: () => {
+            this._stateElapsedMs = 0;
+            // Walk to altar, kneel. Altar x = first routine waypoint by
+            // convention.
+            const altarWp = this._wpById.get(this._routine[0]);
+            if (altarWp) this._callingTargetX = altarWp.x;
+          },
+          update: (dtMs) => {
+            this._stateElapsedMs += dtMs;
+            if (Number.isFinite(this._callingTargetX)) {
+              const moveSpeed =
+                (this.gameState && this.gameState.reaperTraits?.moveSpeed) || 220;
+              const dir = this._callingTargetX > this.view.x ? 1 : -1;
+              const step = moveSpeed * (dtMs / 1000) * dir;
+              const next = this.view.x + step;
+              if (
+                (dir > 0 && next >= this._callingTargetX) ||
+                (dir < 0 && next <= this._callingTargetX)
+              ) {
+                this.view.x = this._callingTargetX;
+              } else {
+                this.view.x = next;
+              }
+            }
+            if (this._stateElapsedMs >= CALLING_FOR_HELP_TIMEOUT_MS) {
+              this._emitStageFail('HELP_ARRIVED');
+            }
+          },
+          exit: () => {
+            this._callingTargetX = null;
+          },
         },
+
         PRAYING: {
-          enter: () => {},
-          update: () => {},
+          enter: () => {
+            this._stateElapsedMs = 0;
+          },
+          update: (dtMs) => {
+            this._stateElapsedMs += dtMs;
+            // Auto-end at 6s → NEUTRAL. Any haunt also interrupts (handled
+            // by applyHaunt's non-NEUTRAL interrupt path).
+            if (this._stateElapsedMs >= PRAYING_TIMEOUT_MS) {
+              this.fsm.transition('NEUTRAL');
+            }
+          },
           exit: () => {},
         },
+
         RITUAL: {
-          enter: () => {},
-          update: () => {},
+          enter: () => {
+            this._stateElapsedMs = 0;
+          },
+          update: (dtMs) => {
+            this._stateElapsedMs += dtMs;
+            if (this._stateElapsedMs >= RITUAL_TIMEOUT_MS) {
+              this._emitStageFail('SOUL_SAVED');
+            }
+          },
           exit: () => {},
         },
+
         HIDING: {
-          enter: () => {},
-          update: () => {},
+          enter: () => {
+            this._stateElapsedMs = 0;
+            // Snap to nearest waypoint x — the "duck at the nearest cover" beat.
+            let nearestX = this.view.x;
+            let nearestDist = Infinity;
+            for (const wp of this.stageData.waypoints) {
+              const d = Math.abs(wp.x - this.view.x);
+              if (d < nearestDist) {
+                nearestDist = d;
+                nearestX = wp.x;
+              }
+            }
+            this.view.x = nearestX;
+          },
+          update: (dtMs) => {
+            this._stateElapsedMs += dtMs;
+            // FEAR ticks +1 / s through the chokepoint. The integrator may
+            // also drive this externally, but we apply here so the FSM is
+            // self-sufficient in tests.
+            if (this.gameState) {
+              const traits = this.gameState.reaperTraits || { fearGainMultiplier: 1 };
+              const delta = applyFearGain(HIDING_FEAR_PER_MS * dtMs, traits);
+              this.gameState.fear = Math.min(100, this.gameState.fear + delta);
+            }
+            // Reaper-proximity check — when sight is ON and the Reaper passes
+            // within 80px of the hide spot, transition to FLEEING.
+            if (
+              this._sightOn &&
+              Number.isFinite(this._reaperX) &&
+              Math.abs(this._reaperX - this.view.x) <= HIDING_REAPER_PROXIMITY_PX
+            ) {
+              this.fsm.transition('FLEEING');
+            }
+          },
           exit: () => {},
         },
       },
       'NEUTRAL',
     );
+
+    // Pending side effects buffered between applyHaunt invocations.
+    this._pendingSideEffects = [];
+    // Track whether the routine has been started at least once, so re-enters
+    // of NEUTRAL re-engage it (instead of a stale dwell-at-spawn).
+    this._routineStartedAtLeastOnce = false;
+    this._callingTargetX = null;
+    // Trips on first STAGE_FAIL emission so we don't double-emit on subsequent
+    // ticks if the integrator hasn't yet transitioned Stage to SCORE.
+    this._stageFailEmitted = false;
   }
 
   /** Convenience for callers (e.g. computeHauntFearDelta) that want the raw state name. */
@@ -200,10 +431,178 @@ export class Victim {
   }
 
   /**
+   * Sight-budget drain multiplier. The Reaper Sight subsystem reads this
+   * each frame and multiplies its base drain by the returned value. Slice 4
+   * surface: PRAYING → 3, all other states → 1. The integrator wires the
+   * actual drain (out of this file's scope).
+   */
+  get sightDrainMultiplier() {
+    return this.fsm.is('PRAYING') ? PRAYING_SIGHT_DRAIN_MULT : 1;
+  }
+
+  /** Perception input — call each frame from main.js. */
+  setReaperX(x) {
+    this._reaperX = x;
+  }
+
+  /** Perception input — call when SightFSM toggles. */
+  setSightOn(isOn) {
+    this._sightOn = !!isOn;
+  }
+
+  /**
+   * Apply a haunt to this victim. Single entry point for the haunt → FSM
+   * pipeline. Handles all three branches per PRD §6.5-§6.7:
+   *   - non-NEUTRAL victim → clean interrupt to NEUTRAL, fearDelta = 0
+   *   - NEUTRAL + correct waypoint → stay NEUTRAL, fearDelta = 35*mult
+   *   - NEUTRAL + wrong waypoint → pickReaction (bucket + bias), transition,
+   *                                fearDelta = 5*mult
+   *
+   * Returns a result object so callers (actionHandlers, tests) can read
+   * fearDelta + accumulated sideEffects in one call.
+   *
+   * @param {string} hauntId  one of 'SHATTER' | 'VOICE' | 'WHISPER' | 'RISE'
+   * @param {object} [opts]
+   * @param {number} [opts.now]   wall-clock ms; defaults to this._now()
+   * @returns {{
+   *   fearDelta: number,
+   *   stateBefore: string,
+   *   stateAfter:  string,
+   *   sideEffects: Array<object>,
+   * }}
+   */
+  applyHaunt(hauntId, opts = {}) {
+    const stateBefore = this.fsm.currentName;
+    const sideEffects = [];
+
+    // Branch 1: any non-NEUTRAL state → clean interrupt (PRD §6.7).
+    if (stateBefore !== 'NEUTRAL') {
+      this.fsm.transition('NEUTRAL');
+      return {
+        fearDelta: 0,
+        stateBefore,
+        stateAfter: this.fsm.currentName,
+        sideEffects,
+      };
+    }
+
+    // Branch 2 + 3: NEUTRAL. First compute the fear delta through the chokepoint.
+    const now = Number.isFinite(opts.now) ? opts.now : this._now();
+    const recentHauntsMap = this._buildRecentHauntsMap();
+    const fearDelta = computeHauntFearDelta({
+      haunt: hauntId,
+      waypoint: this.currentWaypointId,
+      recentHaunts: recentHauntsMap,
+      victimState: 'NEUTRAL',
+      traits: this.gameState?.reaperTraits || { fearGainMultiplier: 1 },
+      now,
+    });
+
+    const hauntCfg = this.stageData.haunts && this.stageData.haunts[hauntId];
+    const correctWaypointId = hauntCfg ? hauntCfg.correctWaypointId : null;
+
+    // Branch 2: correct waypoint → stay NEUTRAL. Reactions only roll on wrong.
+    if (this.currentWaypointId === correctWaypointId) {
+      return {
+        fearDelta,
+        stateBefore,
+        stateAfter: this.fsm.currentName,
+        sideEffects,
+      };
+    }
+
+    // Branch 3: wrong waypoint → roll reaction (bucket + bias).
+    const fear = this.gameState ? this.gameState.fear : 0;
+    const { stateId } = pickReaction({
+      haunt: hauntId,
+      waypoint: this.currentWaypointId,
+      stageData: this.stageData,
+      fear,
+      rng: this._rng,
+    });
+    this.fsm.transition(stateId);
+    // Drain any side effects accumulated during the state's enter().
+    if (this._pendingSideEffects.length > 0) {
+      sideEffects.push(...this._pendingSideEffects);
+      this._pendingSideEffects.length = 0;
+    }
+
+    return {
+      fearDelta,
+      stateBefore,
+      stateAfter: this.fsm.currentName,
+      sideEffects,
+    };
+  }
+
+  /**
+   * Build the hauntId → ms map fearMath wants from gameState.recentHaunts.
+   * (gameState.recentHaunts is an array of {hauntId, timeMs}.)
+   */
+  _buildRecentHauntsMap() {
+    const map = {};
+    const arr = this.gameState && this.gameState.recentHaunts;
+    if (Array.isArray(arr)) {
+      for (const entry of arr) {
+        if (entry && typeof entry.hauntId === 'string') {
+          map[entry.hauntId] = entry.timeMs;
+        }
+      }
+    }
+    return map;
+  }
+
+  /**
+   * AGGRESSIVE smash predicate: find the nearest unlocked, non-smashed
+   * Evidence whose host-object x is within SMASH_RANGE_PX of the victim's
+   * current x. Returns the hauntId to disable, or null if none in range.
+   */
+  _findSmashTarget() {
+    const evidence = Array.isArray(this.stageData.evidence)
+      ? this.stageData.evidence
+      : [];
+    let nearest = null;
+    let nearestDist = Infinity;
+    const myX = this.view.x;
+    const smashed = (this.gameState && this.gameState.smashedHaunts) || new Set();
+    const unlocked = (this.gameState && this.gameState.unlockedHaunts) || new Set();
+    for (const ev of evidence) {
+      if (!ev || typeof ev.hauntId !== 'string') continue;
+      // Skip already-smashed haunts. Only unlocked haunts are smashable per
+      // PRD §6.5 ("nearest unlocked Evidence's host object").
+      if (smashed.has(ev.hauntId)) continue;
+      if (unlocked.size > 0 && !unlocked.has(ev.hauntId)) continue;
+      const hostX = Number.isFinite(ev.x) ? ev.x : null;
+      if (hostX === null) continue;
+      const d = Math.abs(hostX - myX);
+      if (d <= SMASH_RANGE_PX && d < nearestDist) {
+        nearestDist = d;
+        nearest = ev.hauntId;
+      }
+    }
+    return nearest;
+  }
+
+  /**
+   * Push a STAGE_FAIL event onto the phase2EventLog. Score reads it.
+   * Also caches reason on the instance so Stage / main can poll if the
+   * direct callback hook isn't wired yet.
+   */
+  _emitStageFail(reason) {
+    if (this._stageFailEmitted) return;
+    this._stageFailEmitted = true;
+    this.stageFailReason = reason;
+    if (this.gameState && Array.isArray(this.gameState.phase2EventLog)) {
+      this.gameState.phase2EventLog.push({ type: 'stageFailed', reason });
+    }
+  }
+
+  /**
    * Start the dwell→walk→dwell loop. Called by Stage after the 1s post-TAB
    * grace window. Idempotent — calling twice is a no-op.
    */
   startRoutine() {
+    this._routineStartedAtLeastOnce = true;
     if (this._routineActive) return;
     this._routineActive = true;
     this._phase = 'dwell';
